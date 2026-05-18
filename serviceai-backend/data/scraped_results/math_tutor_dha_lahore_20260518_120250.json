@@ -1,0 +1,93 @@
+{
+  "metadata": {
+    "service_type": "math tutor",
+    "location": "DHA Lahore",
+    "city": "Lahore",
+    "timestamp": "2026-05-18T12:02:50.191230",
+    "total_found": 5,
+    "source": "openstreetmap",
+    "file": "math_tutor_dha_lahore_20260518_120250.json"
+  },
+  "providers": [
+    {
+      "name": "DHA Boy's",
+      "address": "",
+      "city": "",
+      "phone": "",
+      "website": "",
+      "rating": null,
+      "reviews_count": null,
+      "lat": 31.4659118,
+      "lng": 74.3954689,
+      "hours": null,
+      "category": "math tutor",
+      "source": "openstreetmap",
+      "distance_km": 1.58,
+      "osm_id": 305600989
+    },
+    {
+      "name": "CFE Group of Colleges",
+      "address": "Main Boulevard Garden Town",
+      "city": "Lahore",
+      "phone": "+924235858400;+924235858500",
+      "website": "https://www.cfe.edu.pk/",
+      "rating": null,
+      "reviews_count": null,
+      "lat": 31.5017299,
+      "lng": 74.3239573,
+      "hours": "Mo-Sa 08:00-19:00",
+      "category": "math tutor",
+      "source": "openstreetmap",
+      "distance_km": 7.05,
+      "osm_id": 4317932789
+    },
+    {
+      "name": "Higher Education Commission",
+      "address": "",
+      "city": "",
+      "phone": "",
+      "website": "",
+      "rating": null,
+      "reviews_count": null,
+      "lat": 31.5047481,
+      "lng": 74.3536925,
+      "hours": null,
+      "category": "math tutor",
+      "source": "openstreetmap",
+      "distance_km": 4.7,
+      "osm_id": 4547273141
+    },
+    {
+      "name": "Divisional Public School & Intermediate College",
+      "address": "Circular Road",
+      "city": "Lahore",
+      "phone": "",
+      "website": "",
+      "rating": null,
+      "reviews_count": null,
+      "lat": 31.4803568,
+      "lng": 74.3270663,
+      "hours": null,
+      "category": "math tutor",
+      "source": "openstreetmap",
+      "distance_km": 6.33,
+      "osm_id": 4916250622
+    },
+    {
+      "name": "Government College for Women",
+      "address": "Circular Road",
+      "city": "Lahore",
+      "phone": "",
+      "website": "",
+      "rating": null,
+      "reviews_count": null,
+      "lat": 31.4843815,
+      "lng": 74.3214337,
+      "hours": null,
+      "category": "math tutor",
+      "source": "openstreetmap",
+      "distance_km": 6.89,
+      "osm_id": 4916250625
+    }
+  ]
+}

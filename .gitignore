@@ -1,0 +1,9 @@
+.env
+.gemini/
+.claude/
+__pycache__/
+node_modules/
+.expo/
+skills/
+*.pdf
+.DS_Store

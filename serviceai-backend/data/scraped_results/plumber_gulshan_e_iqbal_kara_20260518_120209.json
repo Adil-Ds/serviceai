@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "service_type": "plumber",
+    "location": "Gulshan-e-Iqbal Karachi",
+    "city": "Karachi",
+    "timestamp": "2026-05-18T12:02:09.653028",
+    "total_found": 4,
+    "source": "openstreetmap",
+    "file": "plumber_gulshan_e_iqbal_kara_20260518_120209.json"
+  },
+  "providers": [
+    {
+      "name": "Atif Brothers(House Of Machineries)",
+      "address": "16, Naseerabad Block 14 Gulberg Town,",
+      "city": "Karachi",
+      "phone": "",
+      "website": "",
+      "rating": null,
+      "reviews_count": null,
+      "lat": 24.9356296,
+      "lng": 67.0770293,
+      "hours": null,
+      "category": "plumber",
+      "source": "openstreetmap",
+      "distance_km": 7.98,
+      "osm_id": 12165227563
+    },
+    {
+      "name": "Ali Traders",
+      "address": "15, Federal B Area Naseerabad Block 14 Gulberg Town,",
+      "city": "Karachi",
+      "phone": "",
+      "website": "",
+      "rating": null,
+      "reviews_count": null,
+      "lat": 24.935032,
+      "lng": 67.0773917,
+      "hours": null,
+      "category": "plumber",
+      "source": "openstreetmap",
+      "distance_km": 7.93,
+      "osm_id": 12165259221
+    },
+    {
+      "name": "Karachi ka Plumber gulshan e Iqbal mai ju kam krta ho - Facebook",
+      "address": "Gulshan-e-Iqbal Karachi",
+      "city": "Gulshan-e-Iqbal Karachi",
+      "phone": "03343830166",
+      "website": "https://www.facebook.com/groups/233060945556129/posts/1250140703848143/",
+      "description": "25-Jan-2026 · Shamasuddin Jamali. Wattsp my no 03343830166 ; Saleem Ateeq. Assalamu alaikum boss I'm plumber Gulshan e Iqbal 2 03422659546 my contact number.Need best plumber gulshan e iqbal ? - FacebookCan anybody provide me plumber's number?? For Block 1 gulistan-e ...More results from www.facebook.com",
+      "rating": null,
+      "reviews_count": null,
+      "lat": null,
+      "lng": null,
+      "hours": null,
+      "category": "plumber",
+      "source": "ddg_text",
+      "distance_km": null
+    },
+    {
+      "name": "Professional plumbing services water pumps repairs in gulistan e ...",
+      "address": "Gulshan-e-Iqbal Karachi",
+      "city": "Gulshan-e-Iqbal Karachi",
+      "phone": "03333786194",
+      "website": "https://www.facebook.com/100092244760605/posts/professional-plumbing-services-water-pumps-repairs-in-gulistan-e-johar-scheme-33/638969279187892/",
+      "description": "Professional plumbing services water pumps repairs in gulistan e Johar scheme 33 Gulshan e Iqbal Karachi contact 03333786194 · Professional plumbing contact ...",
+      "rating": null,
+      "reviews_count": null,
+      "lat": null,
+      "lng": null,
+      "hours": null,
+      "category": "plumber",
+      "source": "ddg_text",
+      "distance_km": null
+    }
+  ]
+}

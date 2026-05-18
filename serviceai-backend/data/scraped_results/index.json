@@ -1,0 +1,94 @@
+{
+  "searches": [
+    {
+      "file": "plumber_gulshan_e_iqbal_kara_20260518_115809.json",
+      "path": "C:\\Users\\Lenovo\\Desktop\\hacakathon\\serviceai-backend\\data\\scraped_results\\plumber_gulshan_e_iqbal_kara_20260518_115809.json",
+      "service_type": "plumber",
+      "location": "Gulshan-e-Iqbal Karachi",
+      "city": "Karachi",
+      "timestamp": "2026-05-18T11:58:09.512704",
+      "total_found": 5,
+      "source": "ddg_text"
+    },
+    {
+      "file": "plumber_gulshan_e_iqbal_kara_20260518_115934.json",
+      "path": "C:\\Users\\Lenovo\\Desktop\\hacakathon\\serviceai-backend\\data\\scraped_results\\plumber_gulshan_e_iqbal_kara_20260518_115934.json",
+      "service_type": "plumber",
+      "location": "Gulshan-e-Iqbal Karachi",
+      "city": "Karachi",
+      "timestamp": "2026-05-18T11:59:34.051121",
+      "total_found": 5,
+      "source": "ddg_text"
+    },
+    {
+      "file": "plumber_gulshan_e_iqbal_kara_20260518_120209.json",
+      "path": "C:\\Users\\Lenovo\\Desktop\\hacakathon\\serviceai-backend\\data\\scraped_results\\plumber_gulshan_e_iqbal_kara_20260518_120209.json",
+      "service_type": "plumber",
+      "location": "Gulshan-e-Iqbal Karachi",
+      "city": "Karachi",
+      "timestamp": "2026-05-18T12:02:09.653028",
+      "total_found": 4,
+      "source": "openstreetmap"
+    },
+    {
+      "file": "math_tutor_dha_lahore_20260518_120250.json",
+      "path": "C:\\Users\\Lenovo\\Desktop\\hacakathon\\serviceai-backend\\data\\scraped_results\\math_tutor_dha_lahore_20260518_120250.json",
+      "service_type": "math tutor",
+      "location": "DHA Lahore",
+      "city": "Lahore",
+      "timestamp": "2026-05-18T12:02:50.191230",
+      "total_found": 5,
+      "source": "openstreetmap"
+    },
+    {
+      "file": "tutor_gulshan_e_iqbal_kara_20260518_120644.json",
+      "path": "C:\\Users\\Lenovo\\Desktop\\hacakathon\\serviceai-backend\\data\\scraped_results\\tutor_gulshan_e_iqbal_kara_20260518_120644.json",
+      "service_type": "tutor",
+      "location": "Gulshan-e-Iqbal Karachi",
+      "city": "Karachi",
+      "timestamp": "2026-05-18T12:06:44.199619",
+      "total_found": 10,
+      "source": "openstreetmap"
+    },
+    {
+      "file": "electrician_gulshan_e_iqbal_kara_20260518_121444.json",
+      "path": "C:\\Users\\Lenovo\\Desktop\\hacakathon\\serviceai-backend\\data\\scraped_results\\electrician_gulshan_e_iqbal_kara_20260518_121444.json",
+      "service_type": "electrician",
+      "location": "Gulshan-e-Iqbal Karachi",
+      "city": "Karachi",
+      "timestamp": "2026-05-18T12:14:44.757842",
+      "total_found": 10,
+      "source": "openstreetmap"
+    },
+    {
+      "file": "doctor_gulshan_e_iqbal_kara_20260518_122908.json",
+      "path": "C:\\Users\\Lenovo\\Desktop\\hacakathon\\serviceai-backend\\data\\scraped_results\\doctor_gulshan_e_iqbal_kara_20260518_122908.json",
+      "service_type": "doctor",
+      "location": "Gulshan-e-Iqbal Karachi",
+      "city": "Karachi",
+      "timestamp": "2026-05-18T12:29:08.763250",
+      "total_found": 10,
+      "source": "openstreetmap"
+    },
+    {
+      "file": "plumber_کوٹ_خواجہ_سعید_بیگم_20260518_124022.json",
+      "path": "C:\\Users\\Lenovo\\Desktop\\hacakathon\\serviceai-backend\\data\\scraped_results\\plumber_کوٹ_خواجہ_سعید_بیگم_20260518_124022.json",
+      "service_type": "plumber",
+      "location": "کوٹ خواجہ سعید بیگم پورہ",
+      "city": "بیگم پورہ",
+      "timestamp": "2026-05-18T12:40:22.992678",
+      "total_found": 10,
+      "source": "ddg_text"
+    },
+    {
+      "file": "tutor_kot_khwaja_saeed__la_20260518_125002.json",
+      "path": "C:\\Users\\Lenovo\\Desktop\\hacakathon\\serviceai-backend\\data\\scraped_results\\tutor_kot_khwaja_saeed__la_20260518_125002.json",
+      "service_type": "tutor",
+      "location": "Kot Khwaja Saeed, Lahore, Punjab",
+      "city": "Lahore",
+      "timestamp": "2026-05-18T12:50:02.187827",
+      "total_found": 10,
+      "source": "openstreetmap"
+    }
+  ]
+}
