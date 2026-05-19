@@ -1,8 +1,14 @@
+import asyncio
+import json
+import os
+import traceback
+
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import (
     ServiceRequest, ParsedIntent, SearchResult,
     BookingRequest, BookingConfirmation, FollowUp, FollowUpSchedule,
     AgentRunResult,
+    FindBusinessRequest, FindBusinessResponse, ScoredBusiness,
 )
 from app.agents.intent_agent import parse_intent
 from app.agents.search_agent import search_providers
@@ -15,7 +21,6 @@ from app.database.db import (
     get_all_bookings, get_bookings_by_provider, update_booking_status,
     get_booked_slots, get_followups,
 )
-import json, os, traceback
 
 router = APIRouter(prefix="/api")
 
@@ -149,6 +154,72 @@ async def api_scrape_load(path: str):
     if "error" in data:
         raise HTTPException(status_code=404, detail=data["error"])
     return data
+
+
+# ── Business Finder (Google scraper + geocoding + LLM report) ─────────────────
+
+@router.post("/find-business", response_model=FindBusinessResponse)
+async def api_find_business(body: FindBusinessRequest):
+    """
+    Full pipeline:
+      1. LLM calls Google scraper tool → real business listings
+      2. Geocode each address → haversine distance from user
+      3. Score businesses (rating 0-40 + reviews 0-30 + distance 0-30)
+      4. LLM writes a ranked plain-text report with Phone & Address columns
+
+    This is a blocking browser scrape — may take 3-8 minutes.
+    Returns the LLM report and scored business list as JSON.
+    """
+    try:
+        from app.Agentic_booker.pipeline import run_pipeline
+
+        # Run the blocking Chrome scraper in a thread so we don't block the event loop
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                run_pipeline,
+                service=body.service,
+                user_address=body.address,
+                max_results=body.max_results,
+                max_reviews=body.max_reviews,
+                headless=body.headless,
+            ),
+            timeout=600,  # 10-minute hard cap
+        )
+
+        businesses = [
+            ScoredBusiness(
+                rank=i + 1,
+                name=b.get("name"),
+                rating=b.get("rating"),
+                review_count=b.get("review_count"),
+                address=b.get("address"),
+                phone=b.get("phone"),
+                website=b.get("website"),
+                distance_km=b.get("distance_km"),
+                rating_score=b.get("rating_score", 0.0),
+                review_score=b.get("review_score", 0.0),
+                distance_score=b.get("distance_score", 0.0),
+                total_score=b.get("total_score", 0.0),
+            )
+            for i, b in enumerate(result.get("businesses", []))
+        ]
+
+        return FindBusinessResponse(
+            service=result["service"],
+            address=result["address"],
+            businesses=businesses,
+            report=result["report"],
+            report_file=result.get("report_path", ""),
+        )
+
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Pipeline timed out after 10 minutes. Try fewer results.",
+        )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Data endpoints ────────────────────────────────────────

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 
 class ServiceRequest(BaseModel):
@@ -90,6 +90,39 @@ class SearchResult(BaseModel):
     filtered_count: int
     providers: List[Provider]
     search_summary: str
+
+
+# ─── Business Finder (Agentic_booker pipeline) ───────────────────────────────
+
+class FindBusinessRequest(BaseModel):
+    service: str
+    address: str
+    max_results: int = 5
+    max_reviews: int = 10
+    headless: bool = False  # True breaks Google scraping on Windows; use only on Linux+Xvfb
+
+
+class ScoredBusiness(BaseModel):
+    rank: int
+    name: Optional[str] = None
+    rating: Optional[str] = None
+    review_count: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    distance_km: Optional[float] = None
+    rating_score: float = 0.0
+    review_score: float = 0.0
+    distance_score: float = 0.0
+    total_score: float = 0.0
+
+
+class FindBusinessResponse(BaseModel):
+    service: str
+    address: str
+    businesses: List[ScoredBusiness]
+    report: str
+    report_file: str
 
 
 # ─── Agentic Runner models (Phase A/B/C) ─────────────────────────────────────
