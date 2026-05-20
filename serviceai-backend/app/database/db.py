@@ -164,6 +164,23 @@ def get_all_bookings():
     return [dict(r) for r in rows]
 
 
+def get_bookings_by_user(user_id: str):
+    conn = get_connection()
+    # Gracefully associate orphaned bookings (e.g. from background tasks missing user context)
+    if user_id:
+        conn.execute(
+            "UPDATE bookings SET user_id = ? WHERE user_id IS NULL OR user_id = ''",
+            (user_id,)
+        )
+        conn.commit()
+    rows = conn.execute(
+        "SELECT * FROM bookings WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def get_bookings_by_provider(provider_id: str, status: str = None):
     conn = get_connection()
     if status:
@@ -225,3 +242,80 @@ def get_followups(booking_id: str) -> list:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_user_analytics(user_id: str) -> dict:
+    """
+    Generate real-time database-driven analytics for a specific user:
+    - Total bookings
+    - Today's bookings count
+    - Pending bookings count
+    - Weekly booking trend (last 7 days of bookings)
+    - Service category distribution
+    """
+    conn = get_connection()
+    
+    # Gracefully associate orphaned bookings (e.g. from background tasks missing user context)
+    if user_id:
+        conn.execute(
+            "UPDATE bookings SET user_id = ? WHERE user_id IS NULL OR user_id = ''",
+            (user_id,)
+        )
+        conn.commit()
+    
+    # 1. Total bookings
+    total = conn.execute(
+        "SELECT COUNT(*) as cnt FROM bookings WHERE user_id = ?", (user_id,)
+    ).fetchone()["cnt"]
+    
+    # 2. Today's bookings
+    import datetime as dt
+    today_str = dt.datetime.now().strftime("%Y-%m-%d")
+    today_count = conn.execute(
+        """SELECT COUNT(*) as cnt FROM bookings 
+           WHERE user_id = ? AND (date LIKE ? OR date LIKE '%today%')""", 
+        (user_id, f"%{today_str}%")
+    ).fetchone()["cnt"]
+    
+    # 3. Pending bookings
+    pending = conn.execute(
+        "SELECT COUNT(*) as cnt FROM bookings WHERE user_id = ? AND status = 'PENDING'", 
+        (user_id,)
+    ).fetchone()["cnt"]
+    
+    # 4. Weekly bookings trend (last 7 days)
+    weekly_trend = []
+    for i in range(6, -1, -1):
+        day = (dt.date.today() - dt.timedelta(days=i))
+        day_str = day.strftime("%Y-%m-%d")
+        day_name = day.strftime("%a")
+        
+        cnt = conn.execute(
+            "SELECT COUNT(*) as cnt FROM bookings WHERE user_id = ? AND created_at LIKE ?",
+            (user_id, f"%{day_str}%")
+        ).fetchone()["cnt"]
+        
+        weekly_trend.append({"day": day_name, "count": cnt})
+        
+    # 5. Service category distribution
+    rows = conn.execute(
+        """SELECT service, COUNT(*) as cnt FROM bookings 
+           WHERE user_id = ? 
+           GROUP BY service 
+           ORDER BY cnt DESC""",
+        (user_id,)
+    ).fetchall()
+    
+    categories = []
+    for r in rows:
+        categories.append({"category": r["service"], "count": r["cnt"]})
+        
+    conn.close()
+    
+    return {
+        "total_bookings": total,
+        "today_bookings": today_count,
+        "pending_bookings": pending,
+        "weekly_trend": weekly_trend,
+        "categories": categories,
+    }

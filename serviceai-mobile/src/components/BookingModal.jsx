@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Animated,
   Modal, TextInput, KeyboardAvoidingView, Platform, Alert,
@@ -37,7 +37,7 @@ export function toE164(phone) {
   return `+${digits}`;
 }
 
-export default function BookingModal({ visible, biz, service, searchLocation, userName, userPhone, onClose, onCallComplete }) {
+export default function BookingModal({ visible, biz, service, searchLocation, userName, userPhone, userId, onClose, onCallComplete }) {
   const [phase,        setPhase]       = useState("form");
   const [timeChip,     setTimeChip]    = useState(0);
   const [customTime,   setCustomTime]  = useState("");
@@ -56,6 +56,37 @@ export default function BookingModal({ visible, biz, service, searchLocation, us
   const spinLoopRef      = useRef(null);
   const modalVisibleRef  = useRef(visible);
   const onCallCompleteRef = useRef(onCallComplete);
+
+  const pulseRing1       = useRef(new Animated.Value(0)).current;
+  const pulseRing2       = useRef(new Animated.Value(0)).current;
+  const followUpSlideAnims = useRef(
+    Array.from({ length: 3 }).map(() => new Animated.Value(250))
+  ).current;
+
+  const particles = useMemo(() => {
+    return Array.from({ length: 25 }).map((_, i) => {
+      const startX = Math.random() * 100; // % width
+      const delay = Math.random() * 1000;
+      const duration = 2000 + Math.random() * 1200;
+      const size = 5 + Math.random() * 6; // size 5 to 11
+      const colors = [COLORS.success, COLORS.primary, COLORS.warning, COLORS.info, COLORS.violet];
+      const color = colors[i % colors.length];
+      
+      const animY = new Animated.Value(0);
+      const animX = new Animated.Value(0);
+      
+      return {
+        id: i,
+        startX,
+        delay,
+        duration,
+        size,
+        color,
+        animY,
+        animX,
+      };
+    });
+  }, []);
 
   useEffect(() => { modalVisibleRef.current = visible; }, [visible]);
   useEffect(() => { onCallCompleteRef.current = onCallComplete; }, [onCallComplete]);
@@ -100,11 +131,94 @@ export default function BookingModal({ visible, biz, service, searchLocation, us
   const stopAnims = () => {
     pulseLoopRef.current?.stop();
     spinLoopRef.current?.stop();
+    pulseRing1.setValue(0);
+    pulseRing2.setValue(0);
   };
 
   const startCheckAnim = () => {
     checkAnim.setValue(0);
     Animated.spring(checkAnim, { toValue: 1, friction: 5, tension: 120, useNativeDriver: true }).start();
+  };
+
+  const startOutcomeAnims = () => {
+    // 1. Checkmark spring anim
+    startCheckAnim();
+    
+    // 2. Pulse rings animation looping
+    pulseRing1.setValue(0);
+    pulseRing2.setValue(0);
+    Animated.parallel([
+      Animated.loop(
+        Animated.timing(pulseRing1, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        })
+      ),
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(1000),
+          Animated.timing(pulseRing2, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          })
+        ])
+      )
+    ]).start();
+
+    // 3. Falling circles/confetti animation
+    particles.forEach(p => {
+      p.animY.setValue(0);
+      p.animX.setValue(0);
+      
+      Animated.parallel([
+        Animated.sequence([
+          Animated.delay(p.delay),
+          Animated.timing(p.animY, {
+            toValue: 1,
+            duration: p.duration,
+            useNativeDriver: true,
+          })
+        ]),
+        Animated.sequence([
+          Animated.delay(p.delay),
+          Animated.loop(
+            Animated.sequence([
+              Animated.timing(p.animX, {
+                toValue: 12,
+                duration: p.duration / 3,
+                useNativeDriver: true,
+              }),
+              Animated.timing(p.animX, {
+                toValue: -12,
+                duration: p.duration / 3,
+                useNativeDriver: true,
+              }),
+              Animated.timing(p.animX, {
+                toValue: 0,
+                duration: p.duration / 3,
+                useNativeDriver: true,
+              }),
+            ])
+          )
+        ])
+      ]).start();
+    });
+
+    // 4. Follow-up items slide-in
+    followUpSlideAnims.forEach(anim => anim.setValue(250));
+    followUpSlideAnims.forEach((anim, idx) => {
+      Animated.sequence([
+        Animated.delay(600 + idx * 180),
+        Animated.spring(anim, {
+          toValue: 0,
+          friction: 8,
+          tension: 50,
+          useNativeDriver: true,
+        })
+      ]).start();
+    });
   };
 
   const startPolling = useCallback((logId) => {
@@ -118,8 +232,12 @@ export default function BookingModal({ visible, biz, service, searchLocation, us
           stopAnims();
           await AsyncStorage.removeItem(PENDING_CALL_KEY);
           setCallData(data);
-          startCheckAnim();
           setPhase("outcome");
+          if (data.outcome === "ACCEPTED") {
+            startOutcomeAnims();
+          } else {
+            startCheckAnim();
+          }
           // If modal is not visible, notify the user via Alert and fire the callback
           if (!modalVisibleRef.current) {
             const cfg = OUTCOME_CFG[data.outcome] || OUTCOME_CFG[data.status] || OUTCOME_CFG.FAILED;
@@ -155,6 +273,7 @@ export default function BookingModal({ visible, biz, service, searchLocation, us
         language:       "ur",
         user_phone:     userPhone || null,
         booking_id:     null,
+        user_id:        userId || null,
       });
       const logId = res?.call_log_id;
       setCallLogId(logId);
@@ -171,8 +290,8 @@ export default function BookingModal({ visible, biz, service, searchLocation, us
     } catch (err) {
       stopAnims();
       setCallData({ status: "FAILED", outcome: "FAILED", reason: err.message || "Network error" });
-      startCheckAnim();
       setPhase("outcome");
+      startCheckAnim();
     }
   };
 
@@ -188,6 +307,9 @@ export default function BookingModal({ visible, biz, service, searchLocation, us
         setCounterTime("");
       } else {
         setConfirmPhase("done");
+        if (res?.outcome === "ACCEPTED") {
+          startOutcomeAnims();
+        }
       }
     } catch {
       setConfirmPhase("done");
@@ -209,6 +331,9 @@ export default function BookingModal({ visible, biz, service, searchLocation, us
         setCounterTime("");
       } else {
         setConfirmPhase("done");
+        if (res?.outcome === "ACCEPTED") {
+          startOutcomeAnims();
+        }
       }
     } catch {
       setConfirmPhase("done");
@@ -358,95 +483,305 @@ export default function BookingModal({ visible, biz, service, searchLocation, us
           {/* ── OUTCOME ── */}
           {phase === "outcome" && callData && (
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={bm.centeredPhase}>
-              <Animated.View style={{ transform: [{ scale: checkAnim }], marginBottom: 16 }}>
-                <View style={[bm.outcomeCircle, { backgroundColor: outcomeCfg.color + "22", borderColor: outcomeCfg.color + "55" }]}>
-                  <Ionicons name={outcomeCfg.icon} size={44} color={outcomeCfg.color} />
-                </View>
-              </Animated.View>
+              {callData?.outcome === "ACCEPTED" ? (
+                // ─── STUNNING CONFIRMATION SCREEN (TICKET STYLE) ───
+                <View style={bm.confirmationContainer}>
+                  {/* Confetti Particle Overlay */}
+                  {particles.map(p => {
+                    const translateY = p.animY.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-30, 800],
+                    });
+                    const opacity = p.animY.interpolate({
+                      inputRange: [0, 0.8, 1],
+                      outputRange: [1, 1, 0],
+                    });
+                    return (
+                      <Animated.View
+                        key={p.id}
+                        style={{
+                          position: "absolute",
+                          left: `${p.startX}%`,
+                          top: 0,
+                          width: p.size,
+                          height: p.size,
+                          borderRadius: p.size / 2,
+                          backgroundColor: p.color,
+                          opacity,
+                          transform: [
+                            { translateY },
+                            { translateX: p.animX },
+                          ],
+                          zIndex: 99,
+                        }}
+                        pointerEvents="none"
+                      />
+                    );
+                  })}
 
-              <Text style={bm.outcomeTitle}>{outcomeCfg.title}</Text>
-              <Text style={bm.outcomeSub}>{outcomeCfg.sub}</Text>
+                  {/* Success Circle & Expanding Pulse Rings */}
+                  <View style={bm.successCircleWrapper}>
+                    {/* Expanding pulse ring 1 */}
+                    <Animated.View
+                      style={[
+                        bm.pulseRing,
+                        {
+                          transform: [
+                            {
+                              scale: pulseRing1.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [1, 2],
+                              }),
+                            },
+                          ],
+                          opacity: pulseRing1.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.4, 0],
+                          }),
+                        },
+                      ]}
+                    />
+                    {/* Expanding pulse ring 2 */}
+                    <Animated.View
+                      style={[
+                        bm.pulseRing,
+                        {
+                          transform: [
+                            {
+                              scale: pulseRing2.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [1, 2],
+                              }),
+                            },
+                          ],
+                          opacity: pulseRing2.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.4, 0],
+                          }),
+                        },
+                      ]}
+                    />
 
-              {callData.reason ? (
-                <View style={bm.reasonBox}>
-                  <Ionicons name="chatbubble-outline" size={12} color={COLORS.primary} />
-                  <Text style={bm.reasonText}>{callData.reason}</Text>
-                </View>
-              ) : null}
+                    {/* Core animated success circle */}
+                    <Animated.View
+                      style={[
+                        bm.successCircleGrad,
+                        { transform: [{ scale: checkAnim }] },
+                      ]}
+                    >
+                      <LinearGradient
+                        colors={[COLORS.success, COLORS.successDark]}
+                        style={bm.successCircleGradInner}
+                      >
+                        <Ionicons name="checkmark" size={48} color="#fff" />
+                      </LinearGradient>
+                    </Animated.View>
+                  </View>
 
-              {callData.outcome === "SUGGESTED_TIME" && callData.suggested_time && confirmPhase !== "done" && (
-                <View style={bm.suggestBox}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <View style={[bm.stepDot, { backgroundColor: COLORS.warning, width: 22, height: 22 }]}>
-                      <Ionicons name="time" size={12} color="#fff" />
+                  <Text style={bm.bookingConfirmedTitle}>Booking confirmed</Text>
+                  <Text style={bm.arrivalSubtext}>
+                    {biz?.name || "Provider"} will arrive in {biz?.eta || 15} min
+                  </Text>
+
+                  {/* Digital Perforated Ticket Card */}
+                  <View style={bm.ticketCard}>
+                    <View style={bm.ticketHeader}>
+                      <View>
+                        <Text style={bm.ticketLabelText}>BOOKING ID</Text>
+                        <Text style={bm.ticketIdText}>
+                          {callData?.booking_id || (callLogId ? `BK-${callLogId.toString().slice(-4).toUpperCase()}-KHI` : "BK-7A3F-KHI")}
+                        </Text>
+                      </View>
+                      <View style={bm.confirmedBadge}>
+                        <Ionicons name="checkmark-circle" size={12} color={COLORS.success} />
+                        <Text style={bm.confirmedBadgeText}>Confirmed</Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: "700" }}>PROVIDER SUGGESTED</Text>
-                      <Text style={{ fontSize: 15, fontWeight: "900", color: COLORS.warning }}>{callData.suggested_time}</Text>
+
+                    {/* Perforation Punch Hole Line */}
+                    <View style={bm.perforationContainer}>
+                      <View style={[bm.punchHole, { left: -24 }]} />
+                      <View style={[bm.punchHole, { right: -24 }]} />
+                      <View style={bm.dashedDivider} />
+                    </View>
+
+                    {/* Receipt Details */}
+                    <View style={bm.ticketDetails}>
+                      {[
+                        { label: "Service", value: service || "Emergency plumbing" },
+                        { label: "Provider", value: biz?.name || "Provider" },
+                        { label: "When", value: preferredTime || "Today · 3:00 PM" },
+                        { label: "Address", value: searchLocation || biz?.address || "DHA Phase 6, House 124-B" },
+                        { label: "Total", value: biz?.price ? `₨${biz.price.toLocaleString()}` : "₨1,250" },
+                      ].map((item, index) => (
+                        <View key={index} style={bm.receiptRow}>
+                          <Text style={bm.receiptRowLabel}>{item.label}</Text>
+                          <Text style={[bm.receiptRowValue, item.label === "Total" && { color: COLORS.success, fontWeight: "900" }]} numberOfLines={2}>
+                            {item.value}
+                          </Text>
+                        </View>
+                      ))}
                     </View>
                   </View>
 
-                  {confirmPhase === "idle" && (
-                    <>
-                      <TouchableOpacity onPress={handleAccept} style={bm.acceptBtn} activeOpacity={0.87}>
-                        <LinearGradient colors={[COLORS.success, COLORS.successDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={bm.acceptBtnGrad}>
-                          <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                          <Text style={bm.acceptBtnText}>Accept {callData.suggested_time}</Text>
-                        </LinearGradient>
-                      </TouchableOpacity>
+                  {/* AI Follow-ups Scheduled Section */}
+                  <View style={bm.followUpsSectionHeader}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <View style={bm.purpleVerticalBar} />
+                      <Text style={bm.followUpsSectionTitle}>AI follow-ups scheduled</Text>
+                    </View>
+                    <View style={bm.geminiBadge}>
+                      <Ionicons name="sparkles" size={10} color={COLORS.violet} />
+                      <Text style={bm.geminiBadgeText}>GEMINI</Text>
+                    </View>
+                  </View>
 
-                      <Text style={[bm.sectionLabel, { textAlign: "center", marginTop: 10 }]}>OR PROPOSE DIFFERENT TIME</Text>
-                      <TextInput
-                        style={bm.customInput}
-                        value={counterTime}
-                        onChangeText={setCounterTime}
-                        placeholder="e.g. Wednesday 2pm"
-                        placeholderTextColor={COLORS.textDim}
-                      />
-                      {counterTime.trim() ? (
-                        <TouchableOpacity onPress={handleCounter} style={[bm.confirmBtn, { marginTop: 8 }]} activeOpacity={0.87}>
-                          <LinearGradient colors={[COLORS.primary, COLORS.violet]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={bm.confirmBtnGrad}>
-                            <Ionicons name="repeat-outline" size={16} color="#fff" />
-                            <Text style={bm.confirmBtnText}>Counter with {counterTime}</Text>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      ) : null}
+                  {/* Follow-up Cards */}
+                  <View style={{ gap: 10, width: "100%", marginTop: 8 }}>
+                    {[
+                      {
+                        when: "10 MIN BEFORE ARRIVAL",
+                        msg: `Your plumber is on the way. ${biz?.name ? biz.name.split(" ")[0] : "Provider"} is 8 mins away.`,
+                        icon: "notifications-outline",
+                      },
+                      {
+                        when: "AFTER SERVICE COMPLETE",
+                        msg: `How did it go? Tap to rate ${biz?.name || "Provider"}.`,
+                        icon: "star-outline",
+                      },
+                      {
+                        when: "3 DAYS LATER",
+                        msg: "Hope the leak is sorted! Need a follow-up visit?",
+                        icon: "chatbubble-outline",
+                      },
+                    ].map((f, i) => (
+                      <Animated.View
+                        key={i}
+                        style={[
+                          bm.followUpCard,
+                          {
+                            transform: [{ translateX: followUpSlideAnims[i] }],
+                          },
+                        ]}
+                      >
+                        <View style={bm.followUpIconWrap}>
+                          <Ionicons name={f.icon} size={16} color={COLORS.violet} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={bm.followUpTimeLabel}>{f.when}</Text>
+                          <Text style={bm.followUpMsgText}>{f.msg}</Text>
+                        </View>
+                      </Animated.View>
+                    ))}
+                  </View>
 
-                      <TouchableOpacity onPress={handleReject} style={bm.rejectBtn} activeOpacity={0.8}>
-                        <Ionicons name="close-circle-outline" size={14} color={COLORS.danger} />
-                        <Text style={bm.rejectBtnText}>Decline — I'll find another provider</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
+                  {/* Custom Done Button */}
+                  <TouchableOpacity onPress={onClose} style={bm.doneGradBtn} activeOpacity={0.85}>
+                    <LinearGradient
+                      colors={[COLORS.primary, COLORS.violet]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={bm.doneGradBtnInner}
+                    >
+                      <Ionicons name="home-outline" size={18} color="#fff" />
+                      <Text style={bm.doneGradBtnText}>Done</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                // ─── ORIGINAL/FALLBACK DESIGN FOR OTHER STATES ───
+                <>
+                  <Animated.View style={{ transform: [{ scale: checkAnim }], marginBottom: 16 }}>
+                    <View style={[bm.outcomeCircle, { backgroundColor: outcomeCfg.color + "22", borderColor: outcomeCfg.color + "55" }]}>
+                      <Ionicons name={outcomeCfg.icon} size={44} color={outcomeCfg.color} />
+                    </View>
+                  </Animated.View>
 
-                  {confirmPhase === "calling" && (
-                    <View style={{ alignItems: "center", paddingVertical: 16 }}>
-                      <Ionicons name="call" size={28} color={COLORS.primary} />
-                      <Text style={{ color: COLORS.textSecondary, fontSize: 12, marginTop: 8 }}>AI Agent calling again…</Text>
+                  <Text style={bm.outcomeTitle}>{outcomeCfg.title}</Text>
+                  <Text style={bm.outcomeSub}>{outcomeCfg.sub}</Text>
+
+                  {callData.reason ? (
+                    <View style={bm.reasonBox}>
+                      <Ionicons name="chatbubble-outline" size={12} color={COLORS.primary} />
+                      <Text style={bm.reasonText}>{callData.reason}</Text>
+                    </View>
+                  ) : null}
+
+                  {callData.outcome === "SUGGESTED_TIME" && callData.suggested_time && confirmPhase !== "done" && (
+                    <View style={bm.suggestBox}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                        <View style={[bm.stepDot, { backgroundColor: COLORS.warning, width: 22, height: 22 }]}>
+                          <Ionicons name="time" size={12} color="#fff" />
+                        </View>
+                        <View>
+                          <Text style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: "700" }}>PROVIDER SUGGESTED</Text>
+                          <Text style={{ fontSize: 15, fontWeight: "900", color: COLORS.warning }}>{callData.suggested_time}</Text>
+                        </View>
+                      </View>
+
+                      {confirmPhase === "idle" && (
+                        <>
+                          <TouchableOpacity onPress={handleAccept} style={bm.acceptBtn} activeOpacity={0.87}>
+                            <LinearGradient colors={[COLORS.success, COLORS.successDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={bm.acceptBtnGrad}>
+                              <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                              <Text style={bm.acceptBtnText}>Accept {callData.suggested_time}</Text>
+                            </LinearGradient>
+                          </TouchableOpacity>
+
+                          <Text style={[bm.sectionLabel, { textAlign: "center", marginTop: 10 }]}>OR PROPOSE DIFFERENT TIME</Text>
+                          <TextInput
+                            style={bm.customInput}
+                            value={counterTime}
+                            onChangeText={setCounterTime}
+                            placeholder="e.g. Wednesday 2pm"
+                            placeholderTextColor={COLORS.textDim}
+                          />
+                          {counterTime.trim() ? (
+                            <TouchableOpacity onPress={handleCounter} style={[bm.confirmBtn, { marginTop: 8 }]} activeOpacity={0.87}>
+                              <LinearGradient colors={[COLORS.primary, COLORS.violet]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={bm.confirmBtnGrad}>
+                                <Ionicons name="repeat-outline" size={16} color="#fff" />
+                                <Text style={bm.confirmBtnText}>Counter with {counterTime}</Text>
+                              </LinearGradient>
+                            </TouchableOpacity>
+                          ) : null}
+
+                          <TouchableOpacity onPress={handleReject} style={bm.rejectBtn} activeOpacity={0.8}>
+                            <Ionicons name="close-circle-outline" size={14} color={COLORS.danger} />
+                            <Text style={bm.rejectBtnText}>Decline — I'll find another provider</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+
+                      {confirmPhase === "calling" && (
+                        <View style={{ alignItems: "center", paddingVertical: 16 }}>
+                          <Ionicons name="call" size={28} color={COLORS.primary} />
+                          <Text style={{ color: COLORS.textSecondary, fontSize: 12, marginTop: 8 }}>AI Agent calling again…</Text>
+                        </View>
+                      )}
+
+                      {confirmPhase === "done" && (
+                        <View style={{ alignItems: "center", paddingVertical: 16 }}>
+                          <Ionicons name="checkmark-circle" size={32} color={COLORS.success} />
+                          <Text style={{ color: COLORS.success, fontSize: 13, fontWeight: "700", marginTop: 8 }}>
+                            {callData?.outcome === "ACCEPTED" ? "Booking Confirmed!" : "Response sent"}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   )}
 
-                  {confirmPhase === "done" && (
-                    <View style={{ alignItems: "center", paddingVertical: 16 }}>
-                      <Ionicons name="checkmark-circle" size={32} color={COLORS.success} />
-                      <Text style={{ color: COLORS.success, fontSize: 13, fontWeight: "700", marginTop: 8 }}>
-                        {callData?.outcome === "ACCEPTED" ? "Booking Confirmed!" : "Response sent"}
-                      </Text>
+                  {callData.transcript && callData.transcript.length > 20 && (
+                    <View style={bm.transcriptBox}>
+                      <Text style={bm.transcriptLabel}>CALL TRANSCRIPT</Text>
+                      <Text style={bm.transcriptText} numberOfLines={6}>{callData.transcript}</Text>
                     </View>
                   )}
-                </View>
-              )}
 
-              {callData.transcript && callData.transcript.length > 20 && (
-                <View style={bm.transcriptBox}>
-                  <Text style={bm.transcriptLabel}>CALL TRANSCRIPT</Text>
-                  <Text style={bm.transcriptText} numberOfLines={6}>{callData.transcript}</Text>
-                </View>
+                  <TouchableOpacity onPress={onClose} style={bm.doneBtn} activeOpacity={0.85}>
+                    <Text style={bm.doneBtnText}>Done</Text>
+                  </TouchableOpacity>
+                </>
               )}
-
-              <TouchableOpacity onPress={onClose} style={bm.doneBtn} activeOpacity={0.85}>
-                <Text style={bm.doneBtnText}>Done</Text>
-              </TouchableOpacity>
             </ScrollView>
           )}
         </Animated.View>
@@ -478,7 +813,7 @@ const bm = StyleSheet.create({
   confirmBtn: { marginHorizontal: 14, marginTop: 16, borderRadius: 16, overflow: "hidden" },
   confirmBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 16 },
   confirmBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
-  centeredPhase: { alignItems: "center", padding: 28, paddingTop: 16, paddingBottom: 32 },
+  centeredPhase: { alignItems: "center", padding: 28, paddingTop: 16, paddingBottom: 32, width: "100%" },
   spinRing: { position: "absolute", width: 120, height: 120, borderRadius: 60, borderWidth: 2.5, borderColor: COLORS.primary + "99", borderTopColor: COLORS.primary, borderRightColor: "transparent" },
   spinRingInner: { position: "absolute", width: 96, height: 96, borderRadius: 48, borderWidth: 1.5, borderColor: COLORS.violet + "66", borderBottomColor: COLORS.violet, borderLeftColor: "transparent" },
   callOrb: { width: 72, height: 72, borderRadius: 20, alignItems: "center", justifyContent: "center", shadowColor: COLORS.primary, shadowOpacity: 0.55, shadowRadius: 18, elevation: 10 },
@@ -505,4 +840,38 @@ const bm = StyleSheet.create({
   transcriptText: { fontSize: 10.5, color: COLORS.textSecondary, lineHeight: 16, fontFamily: "Courier New" },
   doneBtn: { width: "100%", maxWidth: 300, borderRadius: 16, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, alignItems: "center", paddingVertical: 14 },
   doneBtnText: { color: COLORS.primary, fontSize: 15, fontWeight: "800" },
+
+  // Confirmation screen styles
+  confirmationContainer: { width: "100%", alignItems: "center", paddingHorizontal: 4 },
+  successCircleWrapper: { width: 140, height: 140, alignItems: "center", justifyContent: "center", marginVertical: 10, position: "relative" },
+  pulseRing: { position: "absolute", width: 92, height: 92, borderRadius: 46, borderWidth: 2, borderColor: COLORS.success },
+  successCircleGrad: { width: 92, height: 92, borderRadius: 46, overflow: "hidden", shadowColor: COLORS.success, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.45, shadowRadius: 16, elevation: 8 },
+  successCircleGradInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+  bookingConfirmedTitle: { fontSize: 24, fontWeight: "900", color: COLORS.text, textAlign: "center", marginTop: 8, letterSpacing: -0.6 },
+  arrivalSubtext: { fontSize: 13, color: COLORS.textSecondary, textAlign: "center", marginTop: 6, marginBottom: 20 },
+  ticketCard: { width: "100%", backgroundColor: COLORS.card, borderRadius: 18, borderWidth: 1, borderColor: COLORS.borderLight, padding: 16, position: "relative", overflow: "hidden" },
+  ticketHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  ticketLabelText: { fontSize: 9, fontWeight: "800", color: COLORS.textMuted, letterSpacing: 1.2 },
+  ticketIdText: { fontSize: 14, fontWeight: "800", color: COLORS.text, fontFamily: "Courier New", marginTop: 2 },
+  confirmedBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.success + "15", borderWidth: 1, borderColor: COLORS.success + "44", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+  confirmedBadgeText: { fontSize: 10, fontWeight: "800", color: COLORS.success },
+  perforationContainer: { flexDirection: "row", alignItems: "center", height: 16, marginVertical: 14, position: "relative" },
+  punchHole: { position: "absolute", width: 14, height: 14, borderRadius: 7, backgroundColor: COLORS.bg, zIndex: 5 },
+  dashedDivider: { flex: 1, borderStyle: "dashed", borderWidth: 1, borderColor: COLORS.borderLight, height: 0 },
+  ticketDetails: { gap: 10 },
+  receiptRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
+  receiptRowLabel: { fontSize: 12, color: COLORS.textSecondary },
+  receiptRowValue: { fontSize: 12, fontWeight: "700", color: COLORS.text, textAlign: "right", flex: 1 },
+  followUpsSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%", marginTop: 24, marginBottom: 8 },
+  purpleVerticalBar: { width: 3, height: 14, backgroundColor: COLORS.violet, borderRadius: 2 },
+  followUpsSectionTitle: { fontSize: 13, fontWeight: "800", color: COLORS.text },
+  geminiBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.violet + "15", borderWidth: 1, borderColor: COLORS.violet + "33", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  geminiBadgeText: { fontSize: 9, fontWeight: "800", color: COLORS.violet, letterSpacing: 0.5 },
+  followUpCard: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: COLORS.card, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, padding: 12, width: "100%" },
+  followUpIconWrap: { width: 32, height: 32, borderRadius: 10, backgroundColor: COLORS.violet + "18", borderWidth: 1, borderColor: COLORS.violet + "44", alignItems: "center", justifyContent: "center" },
+  followUpTimeLabel: { fontSize: 9, fontWeight: "800", color: COLORS.violet, letterSpacing: 0.6 },
+  followUpMsgText: { fontSize: 12, color: COLORS.text, marginTop: 2, lineHeight: 16 },
+  doneGradBtn: { width: "100%", marginTop: 24, borderRadius: 16, overflow: "hidden" },
+  doneGradBtnInner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15 },
+  doneGradBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
 });

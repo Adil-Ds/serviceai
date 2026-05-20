@@ -170,6 +170,7 @@ class InitiateCallRequest(BaseModel):
     language: str = "en"
     user_phone: Optional[str] = None   # stored for reference  ← added from Schema 2
     booking_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 
 class ConfirmCallRequest(BaseModel):

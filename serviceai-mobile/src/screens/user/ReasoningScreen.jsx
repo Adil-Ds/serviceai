@@ -10,18 +10,28 @@ import { API } from "../../services/api";
 
 // try-require expo-location (not available on web)
 let Location = null;
-try { Location = require("expo-location"); } catch (_) {}
+try { Location = require("expo-location"); } catch (_) { }
 
 async function tryGetCoords() {
   if (!Location) return null;
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== "granted") return null;
+    
+    // Force active satellite-based GPS tracking instead of coarse cell towers/wifi
     const pos = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy?.High ?? 4,
+      accuracy: Location.Accuracy.BestForNavigation,
     });
     return { lat: pos.coords.latitude, lng: pos.coords.longitude };
-  } catch { return null; }
+  } catch {
+    try {
+      // Fallback if device satellite lock fails or is restricted
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    } catch { return null; }
+  }
 }
 
 function cleanAdmin(s) {
@@ -29,6 +39,41 @@ function cleanAdmin(s) {
 }
 
 async function reverseGeocode(lat, lng) {
+  // 1. Try Native System Geocoder first (highly precise in Pakistan/Lahore)
+  if (Location) {
+    try {
+      const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      if (results && results.length > 0) {
+        const addr = results[0];
+        
+        // Assemble high-fidelity detailed street/house-level components
+        const parts = [];
+        if (addr.name && addr.name !== addr.street && addr.name !== addr.district) {
+          parts.push(addr.name);
+        }
+        if (addr.street && addr.street !== addr.district) {
+          parts.push(addr.street);
+        }
+        if (addr.district) {
+          parts.push(addr.district);
+        }
+        if (addr.subregion && addr.subregion !== addr.city) {
+          parts.push(addr.subregion);
+        }
+        if (addr.city) {
+          parts.push(addr.city);
+        }
+        
+        const display = parts.filter(Boolean).join(", ");
+        if (display) {
+          return { city: addr.city || "Lahore", area: addr.district || "", display };
+        }
+      }
+    } catch (e) {
+      console.log("[reverseGeocode] Native geocoder failed on ReasoningScreen, trying Nominatim fallback...", e);
+    }
+  }
+
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=en&zoom=14`,
@@ -43,10 +88,10 @@ async function reverseGeocode(lat, lng) {
 }
 
 const PHASES = [
-  { key: "parsing",   icon: "text-outline",       label: "Reading your request",       sub: "Extracting service & location..." },
-  { key: "locating",  icon: "location-outline",    label: "Detecting your location",    sub: "Reverse geocoding GPS coordinates..." },
-  { key: "searching", icon: "search-outline",      label: "Searching Google Maps",      sub: "Scanning live business listings..." },
-  { key: "ranking",   icon: "podium-outline",      label: "Ranking results",            sub: "Scoring by rating, reviews & distance..." },
+  { key: "parsing", icon: "text-outline", label: "Reading your request", sub: "Extracting service & location..." },
+  { key: "locating", icon: "location-outline", label: "Detecting your location", sub: "Reverse geocoding GPS coordinates..." },
+  { key: "searching", icon: "search-outline", label: "Searching Google Maps", sub: "Scanning live business listings..." },
+  { key: "ranking", icon: "podium-outline", label: "Ranking results", sub: "Scoring by rating, reviews & distance..." },
 ];
 
 const TIPS = [
@@ -66,31 +111,31 @@ export default function ReasoningScreen({ navigation, route }) {
   const [locationText, setLocationText] = useState("Detecting...");
   const [error, setError] = useState(null);
 
-  const pulseAnim  = useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   const ring1Scale = useRef(new Animated.Value(0.4)).current;
   const ring2Scale = useRef(new Animated.Value(0.4)).current;
-  const ring1Op    = useRef(new Animated.Value(0.9)).current;
-  const ring2Op    = useRef(new Animated.Value(0.9)).current;
+  const ring1Op = useRef(new Animated.Value(0.9)).current;
+  const ring2Op = useRef(new Animated.Value(0.9)).current;
   const tipOpacity = useRef(new Animated.Value(1)).current;
-  const timerRef   = useRef(null);
-  const tipRef     = useRef(null);
+  const timerRef = useRef(null);
+  const tipRef = useRef(null);
 
   // Animations
   useEffect(() => {
     Animated.loop(Animated.sequence([
       Animated.timing(pulseAnim, { toValue: 1.12, duration: 1100, useNativeDriver: true }),
-      Animated.timing(pulseAnim, { toValue: 1,    duration: 1100, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1, duration: 1100, useNativeDriver: true }),
     ])).start();
 
     const makeRing = (scale, opacity, delay) =>
       Animated.loop(Animated.sequence([
         Animated.delay(delay),
         Animated.parallel([
-          Animated.timing(scale,   { toValue: 2.8, duration: 2600, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0,   duration: 2600, useNativeDriver: true }),
+          Animated.timing(scale, { toValue: 2.8, duration: 2600, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0, duration: 2600, useNativeDriver: true }),
         ]),
         Animated.parallel([
-          Animated.timing(scale,   { toValue: 0.4, duration: 0, useNativeDriver: true }),
+          Animated.timing(scale, { toValue: 0.4, duration: 0, useNativeDriver: true }),
           Animated.timing(opacity, { toValue: 0.9, duration: 0, useNativeDriver: true }),
         ]),
       ]));
@@ -161,7 +206,7 @@ export default function ReasoningScreen({ navigation, route }) {
   };
 
   const currentPhase = PHASES.find(p => p.key === phaseKey) || PHASES[2];
-  const phaseIndex   = PHASES.findIndex(p => p.key === phaseKey);
+  const phaseIndex = PHASES.findIndex(p => p.key === phaseKey);
 
   if (error) {
     return (
@@ -219,9 +264,9 @@ export default function ReasoningScreen({ navigation, route }) {
           {PHASES.map((p, i) => (
             <View key={p.key} style={[
               styles.dot,
-              i < phaseIndex  && { backgroundColor: COLORS.success, width: 8, height: 8 },
+              i < phaseIndex && { backgroundColor: COLORS.success, width: 8, height: 8 },
               i === phaseIndex && { backgroundColor: COLORS.primary, width: 20, borderRadius: 4 },
-              i > phaseIndex  && { backgroundColor: COLORS.border },
+              i > phaseIndex && { backgroundColor: COLORS.border },
             ]} />
           ))}
         </View>

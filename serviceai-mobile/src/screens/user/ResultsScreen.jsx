@@ -81,7 +81,7 @@ function ScoreBar({ label, value, max, color, delay = 0 }) {
 }
 
 // ── Booking Modal (inline copy kept for file integrity — shared via BookingModal.jsx) ──
-function _BookingModalPlaceholder({ visible, biz, service, searchLocation, userName, onClose }) {
+function _BookingModalPlaceholder({ visible, biz, service, searchLocation, userName, userId, onClose }) {
   // phases: form → calling → outcome → counter
   const [phase,       setPhase]      = useState("form");
   const [timeChip,    setTimeChip]   = useState(0);
@@ -183,6 +183,7 @@ function _BookingModalPlaceholder({ visible, biz, service, searchLocation, userN
         preferred_time: preferredTime,
         language:       "ur",
         booking_id:     null,
+        user_id:        userId || null,
       });
       const logId = res?.call_log_id;
       setCallLogId(logId);
@@ -684,6 +685,7 @@ export default function ResultsScreen({ route, navigation }) {
         searchLocation={address}
         userName={userProfile?.name || "Customer"}
         userPhone={userProfile?.phone || null}
+        userId={userProfile?.uid || null}
         onClose={() => setBookingBiz(null)}
       />
     </SafeAreaView>

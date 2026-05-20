@@ -3,7 +3,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StatusBar } from "expo-status-bar";
-import { View, Text, StyleSheet, Animated, Pressable } from "react-native";
+import { View, Text, StyleSheet, Animated, Pressable, TouchableOpacity } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -65,6 +65,8 @@ function TabIcon({ name, focused, color, label }) {
 // ── Custom Tab Bar ───────────────────────────────────────────────────────────
 function CustomTabBar({ state, descriptors, navigation }) {
   const { colors: C } = useTheme();
+  const isUserTabs = state.routes.some(r => r.name === "BookingHistory");
+
   return (
     <View style={[styles.tabBar, { backgroundColor: C.surface, borderTopColor: C.border }]}>
       {state.routes.map((route, index) => {
@@ -76,7 +78,7 @@ function CustomTabBar({ state, descriptors, navigation }) {
           if (!isFocused && !event.defaultPrevented) navigation.navigate(route.name);
         };
 
-        return (
+        const renderNormalTab = () => (
           <Pressable key={route.key} onPress={onPress} style={styles.tabItem}>
             {options.tabBarIcon({ focused: isFocused, color: isFocused ? C.primary : C.textMuted })}
             <Text style={[styles.tabLabel, { color: isFocused ? C.primary : C.textMuted }]}>
@@ -84,6 +86,44 @@ function CustomTabBar({ state, descriptors, navigation }) {
             </Text>
           </Pressable>
         );
+
+        if (isUserTabs && index === 2) {
+          return (
+            <React.Fragment key={route.key}>
+              {/* Premium Floating Center Ask AI button perfectly centered via flex container */}
+              <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => navigation.navigate("LiveSearch")}
+                  style={{
+                    position: "absolute",
+                    top: -24,
+                    width: 58,
+                    height: 58,
+                    borderRadius: 18,
+                    backgroundColor: COLORS.violet || "#6C63FF",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    shadowColor: COLORS.violet || "#6C63FF",
+                    shadowOffset: { width: 0, height: 8 },
+                    shadowOpacity: 0.5,
+                    shadowRadius: 12,
+                    elevation: 10,
+                    borderWidth: 3,
+                    borderColor: C.surface,
+                  }}
+                >
+                  <Ionicons name="sparkles" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Render Notifications Tab */}
+              {renderNormalTab()}
+            </React.Fragment>
+          );
+        }
+
+        return renderNormalTab();
       })}
     </View>
   );
@@ -107,6 +147,14 @@ function UserTabs() {
         options={{
           title: "Bookings",
           tabBarIcon: ({ focused, color }) => <TabIcon name={focused ? "receipt" : "receipt-outline"} focused={focused} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{
+          title: "Inbox",
+          tabBarIcon: ({ focused, color }) => <TabIcon name={focused ? "notifications" : "notifications-outline"} focused={focused} color={color} />,
         }}
       />
       <Tab.Screen

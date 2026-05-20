@@ -91,12 +91,10 @@ def make_driver(headless: bool = False) -> uc.Chrome:
     opts.add_argument('--no-default-browser-check')
     opts.add_argument('--window-size=1400,900')
     opts.add_argument('--disable-notifications')
-    # Move window off-screen so it doesn't appear on the user's desktop.
-    # True headless is NOT used — Google detects it and returns empty results.
-    opts.add_argument('--window-position=-32000,-32000')
+    # Opened visibly as requested so you can monitor progress.
     if headless:
         opts.add_argument('--headless=new')
-    return uc.Chrome(options=opts)
+    return uc.Chrome(options=opts, use_subprocess=False)
 
 
 def dismiss_consent(driver):
@@ -115,7 +113,7 @@ def dismiss_consent(driver):
 # ── Google search ─────────────────────────────────────────────────────────────
 
 def google_search(driver, query: str) -> str:
-    url = f'https://www.google.com/search?q={quote_plus(query)}&hl=en&gl=us'
+    url = f'https://www.google.com/search?q={quote_plus(query)}&hl=en&gl=us&tbm=lcl'
     driver.get(url)
     pause(2, 4)
     dismiss_consent(driver)
@@ -128,9 +126,12 @@ def google_search(driver, query: str) -> str:
 def get_business_card_elements(driver) -> list:
     """Return clickable Local Pack list items."""
     selectors = [
+        'div.VkpGBb',
+        'div.rl_li',
         'div.rllt__details',
         'div[jscontroller][data-cid]',
-        'div.VkpGBb',
+        '[data-cid]',
+        'a.vw6aTb',
         'div.uMdZh',
         'div.cXedhc',
     ]
@@ -846,9 +847,10 @@ def scrape(service: str, location: str,
 
     query = f'{service} in {location}'
     print(f'\n[*] Query: "{query}"')
+    print('[*] Initializing Chrome browser window... (takes 5-15 seconds)')
 
     driver    = make_driver(headless=headless)
-    serp_url  = f'https://www.google.com/search?q={quote_plus(query)}&hl=en&gl=us'
+    serp_url  = f'https://www.google.com/search?q={quote_plus(query)}&hl=en&gl=us&tbm=lcl'
     businesses = []
 
     try:

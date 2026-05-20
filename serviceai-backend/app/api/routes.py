@@ -174,12 +174,13 @@ async def api_find_business(body: FindBusinessRequest):
         from app.Agentic_booker.pipeline import run_pipeline
 
         # Run the blocking Chrome scraper in a thread so we don't block the event loop
+        # We override max_results=1 for single-provider real-time matching as requested!
         result = await asyncio.wait_for(
             asyncio.to_thread(
                 run_pipeline,
                 service=body.service,
                 user_address=body.address,
-                max_results=body.max_results,
+                max_results=1,
                 max_reviews=body.max_reviews,
                 headless=body.headless,
             ),
@@ -219,6 +220,74 @@ async def api_find_business(body: FindBusinessRequest):
         )
     except Exception as e:
         traceback.print_exc()
+        try:
+            print("[find-business] Pipeline failed. Attempting proactive fallback to cached JSON results...")
+            slug = body.service.lower().strip()
+            candidates = []
+            for fname in os.listdir("."):
+                if fname.startswith(slug) and fname.endswith("_data.json"):
+                    candidates.append(fname)
+            
+            if candidates:
+                candidates.sort()
+                latest_cache = candidates[-1]
+                print(f"[find-business] Found cached snapshot: {latest_cache}")
+                with open(latest_cache, "r", encoding="utf-8") as f:
+                    cache_data = json.load(f)
+                
+                from app.Agentic_booker.pipeline import geocode
+                user_coords = geocode(body.address)
+                user_lat = user_coords[0] if user_coords else None
+                user_lng = user_coords[1] if user_coords else None
+                
+                businesses = []
+                for i, b in enumerate(cache_data.get("businesses", []), 1):
+                    scores = {
+                        "rating_score": 0.0,
+                        "review_score": 0.0,
+                        "distance_km": None,
+                        "distance_score": 0.0,
+                        "total_score": 0.0,
+                    }
+                    if user_lat is not None:
+                        from app.Agentic_booker.pipeline import score_business
+                        scores = score_business(b, user_lat, user_lng)
+                    
+                    businesses.append(
+                        ScoredBusiness(
+                            rank=i,
+                            name=b.get("name"),
+                            rating=b.get("rating"),
+                            review_count=b.get("review_count"),
+                            address=b.get("address"),
+                            phone=b.get("phone"),
+                            website=b.get("website"),
+                            distance_km=scores.get("distance_km"),
+                            rating_score=scores.get("rating_score", 0.0),
+                            review_score=scores.get("review_score", 0.0),
+                            distance_score=scores.get("distance_score", 0.0),
+                            total_score=scores.get("total_score", 0.0),
+                        )
+                    )
+                
+                businesses.sort(key=lambda x: x.total_score, reverse=True)
+                for idx, b in enumerate(businesses):
+                    b.rank = idx + 1
+                
+                report = f"## Business Analysis (Cached Fallback)\n\n"
+                report += f"Proactive fallback activated due to temporary live search unavailability.\n\n"
+                for b in businesses[:3]:
+                    report += f"{b.rank}. **{b.name}**: Proximity is {b.distance_km} km with a total rating of {b.rating}.\n"
+                
+                return FindBusinessResponse(
+                    service=body.service,
+                    address=body.address,
+                    businesses=businesses,
+                    report=report,
+                    report_file=latest_cache,
+                )
+        except Exception as ex:
+            print(f"[find-business] Cache fallback failed: {ex}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -238,8 +307,20 @@ async def api_get_booking(booking_id: str):
 
 
 @router.get("/bookings")
-async def api_get_all_bookings():
+async def api_get_all_bookings(user_id: str = None):
+    if user_id:
+        from app.database.db import get_bookings_by_user
+        return get_bookings_by_user(user_id)
     return get_all_bookings()
+
+
+@router.get("/analytics")
+async def api_get_user_analytics(user_id: str = None):
+    """Retrieve real-time database-driven analytics for a specific user."""
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    from app.database.db import get_user_analytics
+    return get_user_analytics(user_id)
 
 
 @router.put("/bookings/{booking_id}/status")

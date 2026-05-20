@@ -84,7 +84,7 @@ async def create_outbound_call(
         },
         "customer": {
             "number": provider_phone,
-            "name": provider_name,
+            "name": (provider_name or "")[:40],
         },
         "phoneNumberId": VAPI_PHONE_NUMBER_ID,
     }
@@ -103,20 +103,33 @@ async def create_outbound_call(
         return resp.json()
 
 
+_POLL_CONNECT_RETRIES = 3   # retry connect-timeout errors this many times
+_POLL_RETRY_WAIT = 8        # seconds to wait between connect retries
+
+
 async def wait_for_call_completion(call_id: str) -> dict:
     """Poll VAPI every 5 s until the call reaches a terminal status."""
+    poll_timeout = httpx.Timeout(connect=30.0, read=30.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient() as client:
         for _ in range(_MAX_POLL_SECONDS // _POLL_INTERVAL):
             await asyncio.sleep(_POLL_INTERVAL)
-            resp = await client.get(
-                f"{VAPI_BASE_URL}/call/{call_id}",
-                headers={"Authorization": f"Bearer {VAPI_API_KEY}"},
-                timeout=10.0,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("status", "") in _TERMINAL:
-                return data
+            for attempt in range(_POLL_CONNECT_RETRIES):
+                try:
+                    resp = await client.get(
+                        f"{VAPI_BASE_URL}/call/{call_id}",
+                        headers={"Authorization": f"Bearer {VAPI_API_KEY}"},
+                        timeout=poll_timeout,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    if data.get("status", "") in _TERMINAL:
+                        return data
+                    break  # successful poll, advance to next interval
+                except httpx.ConnectTimeout:
+                    if attempt < _POLL_CONNECT_RETRIES - 1:
+                        await asyncio.sleep(_POLL_RETRY_WAIT)
+                        continue
+                    raise
 
     return {"id": call_id, "status": "timeout"}
 

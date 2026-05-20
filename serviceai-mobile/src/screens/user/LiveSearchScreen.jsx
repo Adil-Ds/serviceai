@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Animated, Linking, useWindowDimensions, ScrollView, Pressable, Platform,
-  ActivityIndicator,
+  ActivityIndicator, Modal, PanResponder,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -10,7 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { API } from "../../services/api";
 import { COLORS, SERVICE_CATEGORIES } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
-import BookingModal from "../../components/BookingModal";
+import { toE164 } from "../../components/BookingModal";
 
 let Location = null;
 try { Location = require("expo-location"); } catch (_) { }
@@ -20,13 +20,62 @@ async function tryGetCoords() {
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== "granted") return null;
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy?.High ?? 4 });
+    
+    // Force active satellite-based GPS tracking instead of coarse cell towers/wifi
+    const pos = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.BestForNavigation,
+    });
     return { lat: pos.coords.latitude, lng: pos.coords.longitude };
-  } catch { return null; }
+  } catch {
+    try {
+      // Fallback if device satellite lock fails or is restricted
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    } catch { return null; }
+  }
 }
 
 async function reverseGeocode(lat, lng) {
-  try {
+  // 1. Try Native System Geocoder first (highly precise in Pakistan/Lahore)
+  if (Location) {
+    try {
+      const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      if (results && results.length > 0) {
+        const addr = results[0];
+        
+        // Assemble high-fidelity detailed street/house-level components
+        const parts = [];
+        if (addr.name && addr.name !== addr.street && addr.name !== addr.district) {
+          // Add house number or building name
+          parts.push(addr.name);
+        }
+        if (addr.street && addr.street !== addr.district) {
+          // Add specific street/road
+          parts.push(addr.street);
+        }
+        if (addr.district) {
+          // Add specific neighborhood/colony (e.g. Model Colony)
+          parts.push(addr.district);
+        }
+        if (addr.subregion && addr.subregion !== addr.city) {
+          // Add sub-district/area (e.g. Model Town)
+          parts.push(addr.subregion);
+        }
+        if (addr.city) {
+          parts.push(addr.city);
+        }
+        
+        const fullAddress = parts.filter(Boolean).join(", ");
+        if (fullAddress) {
+          return fullAddress;
+        }
+      }
+    } catch (e) {
+      console.log("[reverseGeocode] Native geocoder failed, trying Nominatim fallback...", e);
+    }
+  }try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=en&zoom=16`,
       { headers: { "User-Agent": "ServiceAI/1.0" } }
@@ -690,22 +739,138 @@ function BoldText({ text, style, highlightColor }) {
 
 // ── AI Analysis Card ─────────────────────────────────────────────────────────
 function AnalysisCard({ report, count }) {
-  const [expanded, setExpanded] = useState(false);
   if (!report) return null;
 
   // Extract first bold entity as top pick
   const topPickMatch = report.match(/\*\*([^*]+)\*\*/);
   const topPick = topPickMatch ? topPickMatch[1] : null;
 
-  // Collect all bold entities (providers mentioned)
-  const allMentioned = [...report.matchAll(/\*\*([^*]+)\*\*/g)].map(m => m[1]);
-  const uniqueMentioned = [...new Set(allMentioned)];
+  // Extract the last sentence or line of the report that states why the AI preferred it as top
+  const lastSentence = (() => {
+    const cleaned = report.trim();
+    const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
+    if (sentences.length === 0) return cleaned;
+    let last = sentences[sentences.length - 1];
+    if (last.length < 25 && sentences.length > 1) {
+      last = sentences[sentences.length - 2] + " " + last;
+    }
+    return last;
+  })();
+
+  // Parse detailed business items from markdown
+  const analyzedBusinesses = [];
+  const lines = report.split("\n");
+
+  // 1. Try to parse from the Markdown table rows first!
+  const tableRows = [];
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("|") && !trimmed.toLowerCase().includes("rank") && !trimmed.includes("---")) {
+      const parts = trimmed.split("|").map(p => p.trim()).filter(Boolean);
+      if (parts.length >= 3) {
+        const rankNum = parseInt(parts[0], 10);
+        if (!isNaN(rankNum)) {
+          tableRows.push({
+            index: rankNum,
+            name: parts[1],
+            rating: parts[2],
+            reviews: parts[3],
+            distance: parts[4],
+            phone: parts[5],
+            address: parts[6],
+            score: parts[7]
+          });
+        }
+      }
+    }
+  });
+
+  // 2. Try to parse detailed paragraph analysis per business
+  const businessDetails = {};
+  let currentBizName = null;
+  let currentBizText = [];
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    const headerMatch = trimmed.match(/^(?:###?\s*(?:\d+\.\s*)?|\d+\.\s*\*\*)([^*#\n:]+)(?:\*\*)?$/) ||
+      trimmed.match(/^(?:###?\s*)?\s*\*\*([^*:]+)\*\*\s*$/);
+
+    if (headerMatch) {
+      if (currentBizName && currentBizText.length > 0) {
+        businessDetails[currentBizName.toLowerCase()] = currentBizText.join(" ");
+      }
+      currentBizName = headerMatch[1].trim();
+      currentBizText = [];
+    } else if (currentBizName) {
+      if (trimmed.startsWith("*") || trimmed.startsWith("-") || trimmed.match(/^\w+:/)) {
+        currentBizText.push(trimmed);
+      } else if (!trimmed.startsWith("|") && !trimmed.startsWith("#")) {
+        currentBizText.push(trimmed);
+      }
+    }
+  });
+  if (currentBizName && currentBizText.length > 0) {
+    businessDetails[currentBizName.toLowerCase()] = currentBizText.join(" ");
+  }
+
+  // 3. Assemble analyzedBusinesses
+  if (tableRows.length > 0) {
+    tableRows.forEach((row) => {
+      let description = "";
+      const lowerName = row.name.toLowerCase();
+      const matchKey = Object.keys(businessDetails).find(k => lowerName.includes(k) || k.includes(lowerName));
+      if (matchKey) {
+        description = businessDetails[matchKey];
+      }
+
+      if (!description) {
+        const details = [];
+        if (row.rating && row.rating !== "N/A") details.push(`Rating: ${row.rating} (${row.reviews || '?'} reviews)`);
+        if (row.distance && row.distance !== "N/A") details.push(`Distance: ${row.distance}`);
+        if (row.phone && row.phone !== "N/A") details.push(`Phone: ${row.phone}`);
+        if (row.address && row.address !== "N/A") details.push(`Address: ${row.address}`);
+        description = details.join(" • ") || "Highly rated local service provider.";
+      }
+
+      analyzedBusinesses.push({
+        index: row.index,
+        name: row.name,
+        description: description,
+      });
+    });
+  } else {
+    // Fallback to legacy regex line parser if table is not present
+    let currentIdx = 1;
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const match = trimmed.match(/^(?:\d+\.\s*)?\s*\*\*([^*]+)\*\*:\s*(.*)$/);
+      if (match) {
+        analyzedBusinesses.push({
+          index: currentIdx++,
+          name: match[1].trim(),
+          description: match[2].trim(),
+        });
+      } else {
+        const match2 = trimmed.match(/^(?:\d+\.\s*)?\s*\*\*([^*]+)\*\*\s+(.*)$/);
+        if (match2) {
+          analyzedBusinesses.push({
+            index: currentIdx++,
+            name: match2[1].trim(),
+            description: match2[2].trim(),
+          });
+        }
+      }
+    });
+  }
 
   return (
     <View style={s.analysisCard}>
       {/* Gradient header */}
       <LinearGradient
-        colors={["rgba(108,99,255,0.22)", "rgba(167,139,250,0.12)"]}
+        colors={["rgba(108,99,255,0.18)", "rgba(167,139,250,0.08)"]}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={s.analysisHeader}
       >
@@ -717,7 +882,7 @@ function AnalysisCard({ report, count }) {
           <Ionicons name="sparkles" size={13} color="#fff" />
         </LinearGradient>
         <View style={{ flex: 1 }}>
-          <Text style={s.analysisTitle}>AI ANALYSIS</Text>
+          <Text style={s.analysisTitle}>AI PREFERENCE SUMMARY</Text>
           <Text style={s.analysisMeta}>{count} providers evaluated</Text>
         </View>
         <View style={s.liveBadge}>
@@ -730,7 +895,7 @@ function AnalysisCard({ report, count }) {
       {topPick && (
         <View style={s.topPickRow}>
           <LinearGradient
-            colors={[COLORS.success + "22", COLORS.successDark + "11"]}
+            colors={[COLORS.success + "15", COLORS.successDark + "08"]}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
             style={s.topPickGrad}
           >
@@ -748,37 +913,100 @@ function AnalysisCard({ report, count }) {
         </View>
       )}
 
-      {/* Mentioned providers chips */}
-      {uniqueMentioned.length > 1 && (
-        <View style={s.chipsRow}>
-          {uniqueMentioned.slice(0, 4).map((name, i) => (
-            <View key={i} style={[
-              s.providerChip,
-              i === 0 && { borderColor: COLORS.success + "55", backgroundColor: COLORS.success + "11" },
-            ]}>
-              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: i === 0 ? COLORS.success : COLORS.textMuted }} />
-              <Text style={[s.chipText, i === 0 && { color: COLORS.success }]} numberOfLines={1}>{name}</Text>
-              {i === 0 && <Ionicons name="checkmark-circle" size={10} color={COLORS.success} />}
-            </View>
-          ))}
+      {/* Structured Evaluation spectrum list */}
+      {analyzedBusinesses.length > 0 && (
+        <View style={{ paddingHorizontal: 0, paddingBottom: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginVertical: 12, paddingHorizontal: 12 }}>
+            <View style={{ width: 3, height: 12, backgroundColor: COLORS.primary, borderRadius: 2 }} />
+            <Text style={{ fontSize: 11, fontWeight: "900", color: COLORS.text, letterSpacing: 0.5 }}>EVALUATION SPECTRUM</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={288}
+            decelerationRate="fast"
+            contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}
+          >
+            {analyzedBusinesses.map((item, i) => {
+              // Highlight negative indicators with warning colors for high visual fidelity
+              const descLower = item.description.toLowerCase();
+              const hasNoData = descLower.includes("no available rating") ||
+                descLower.includes("lacks any meaningful data") ||
+                descLower.includes("no available data") ||
+                descLower.includes("no other information");
+
+              const leftBorderColor = hasNoData ? COLORS.warning : COLORS.primary;
+              const cardBgColors = hasNoData
+                ? ["rgba(245, 158, 11, 0.12)", "rgba(245, 158, 11, 0.02)"]
+                : ["rgba(108, 99, 255, 0.15)", "rgba(108, 99, 255, 0.02)"];
+              const badgeBg = hasNoData ? COLORS.warning : COLORS.primary;
+              const indicatorIcon = hasNoData ? "alert-circle" : "shield-checkmark";
+              const indicatorIconColor = hasNoData ? COLORS.warning : COLORS.primary;
+
+              return (
+                <View
+                  key={i}
+                  style={{
+                    width: 280,
+                    height: 125,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.06)",
+                    borderLeftWidth: 4,
+                    borderLeftColor: leftBorderColor,
+                    overflow: "hidden",
+                  }}
+                >
+                  <LinearGradient
+                    colors={cardBgColors}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{ flex: 1, padding: 12, justifyContent: "space-between" }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <View style={{
+                        backgroundColor: badgeBg,
+                        width: 22, height: 22,
+                        borderRadius: 8,
+                        alignItems: "center", justifyContent: "center",
+                        shadowColor: badgeBg,
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.4,
+                        shadowRadius: 4,
+                        elevation: 4,
+                      }}>
+                        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "900" }}>{item.index}</Text>
+                      </View>
+
+                      <Text style={{ fontSize: 13, fontWeight: "900", color: "#FFFFFF", flex: 1 }} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+
+                      <Ionicons name={indicatorIcon} size={14} color={indicatorIconColor} style={{ opacity: 0.8 }} />
+                    </View>
+
+                    <Text style={{ fontSize: 11.5, color: "rgba(255,255,255,0.85)", lineHeight: 16.5 }} numberOfLines={4}>
+                      {item.description}
+                    </Text>
+                  </LinearGradient>
+                </View>
+              );
+            })}
+          </ScrollView>
         </View>
       )}
 
       {/* Divider */}
       <View style={s.analysisDivider} />
 
-      {/* Full report with bold parsing */}
-      <BoldText
-        text={report}
-        style={[s.analysisText, !expanded && { maxHeight: 72, overflow: "hidden" }]}
-        highlightColor={COLORS.primaryLight}
-      />
-
-      {/* Read more toggle */}
-      <TouchableOpacity onPress={() => setExpanded(e => !e)} style={s.expandBtn} activeOpacity={0.7}>
-        <Text style={s.expandText}>{expanded ? "Show less" : "Read full analysis"}</Text>
-        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={11} color={COLORS.primary} />
-      </TouchableOpacity>
+      {/* Concluding footer note */}
+      <View style={{ paddingHorizontal: 12, paddingBottom: 14, paddingTop: 2 }}>
+        <BoldText
+          text={lastSentence}
+          style={{ fontSize: 11.5, color: COLORS.textMuted, lineHeight: 17.5 }}
+          highlightColor={COLORS.primaryLight}
+        />
+      </View>
     </View>
   );
 }
@@ -817,9 +1045,38 @@ function SkeletonRow() {
 function BottomSheet({ sheetAnim, found, businesses, locationText, report, active, setActive, onClose, phase, onBook }) {
   const displayCount = businesses.length > 0 ? businesses.length : Math.max(found, 0);
 
+  // Define swipe-down PanResponder to dismiss bottom sheet gracefully
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderMove: (evt, gestureState) => {
+        if (gestureState.dy > 0) {
+          sheetAnim.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.4) {
+          // Swipe down is fast/large -> slide closed
+          onClose();
+        } else {
+          // Snap back up to open position
+          Animated.spring(sheetAnim, {
+            toValue: 0,
+            friction: 8,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
   return (
     <Animated.View style={[s.sheet, { transform: [{ translateY: sheetAnim }] }]}>
-      <View style={{ alignItems: "center", paddingTop: 8, paddingBottom: 2 }}>
+      {/* Draggable Top Handle Container */}
+      <View 
+        {...panResponder.panHandlers}
+        style={{ width: "100%", alignItems: "center", paddingTop: 8, paddingBottom: 10 }}
+      >
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.borderLight }} />
       </View>
       <View style={s.sheetHead}>
@@ -838,7 +1095,7 @@ function BottomSheet({ sheetAnim, found, businesses, locationText, report, activ
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 56 }} showsVerticalScrollIndicator={false}>
         {/* Scanning Skeleton Rows / Normal Cards */}
         {phase === "scanning" ? (
           <View style={{ gap: 4, marginTop: 4 }}>
@@ -869,8 +1126,8 @@ function BottomSheet({ sheetAnim, found, businesses, locationText, report, activ
               return (
                 <TouchableOpacity
                   key={i}
-                  onPress={() => setActive(i)}
-                  style={[s.bizCard, active === i && s.bizCardActive]}
+                  onPress={() => { setActive(i); onBook(biz); }}
+                  style={[s.bizCard, active === i && s.bizCardActive, { flexDirection: "row", alignItems: "center", gap: 10 }]}
                   activeOpacity={0.8}
                 >
                   <View style={[s.rankBadge,
@@ -881,8 +1138,8 @@ function BottomSheet({ sheetAnim, found, businesses, locationText, report, activ
                   ]}>
                     <Text style={s.rankNum}>{i + 1}</Text>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 6, alignItems: "flex-start" }}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
                       <Text style={s.bizName} numberOfLines={1}>{name}</Text>
                       {rating != null && (
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
@@ -899,19 +1156,9 @@ function BottomSheet({ sheetAnim, found, businesses, locationText, report, activ
                       </View>
                       {reviews && <Text style={s.bizReviews}>{reviews} reviews</Text>}
                       {score && <Text style={{ fontSize: 9, color: COLORS.textMuted }}>Score {score}</Text>}
-
-                      {biz && (
-                        <TouchableOpacity
-                          onPress={() => onBook(biz)}
-                          style={s.callBtn}
-                          activeOpacity={0.85}
-                        >
-                          <Ionicons name="sparkles" size={10} color="#fff" />
-                          <Text style={s.callText}>AI Book</Text>
-                        </TouchableOpacity>
-                      )}
                     </View>
                   </View>
+                  <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} style={{ paddingLeft: 4 }} />
                 </TouchableOpacity>
               );
             })}
@@ -922,8 +1169,545 @@ function BottomSheet({ sheetAnim, found, businesses, locationText, report, activ
   );
 }
 
+// ── Booking Pending Overlay ───────────────────────────────────────────────────
+function BookingPendingOverlay({ biz, service, locationText, issueText, onDone, onBack }) {
+  const circleScale = useRef(new Animated.Value(0)).current;
+  const pulseRing1 = useRef(new Animated.Value(0)).current;
+  const pulseRing2 = useRef(new Animated.Value(0)).current;
+  const slideAnims = useRef([0, 1, 2].map(() => new Animated.Value(250))).current;
+
+  const [customTimeText, setCustomTimeText] = useState("Today at 03:00 PM");
+
+  const dateSlots = useMemo(() => {
+    const slots = [];
+    const daysOfWeek = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      
+      let dayLabel = i === 0 ? "Today" : i === 1 ? "Tomorrow" : daysOfWeek[d.getDay()];
+      slots.push({
+        dayName: dayLabel,
+        dayNum: d.getDate(),
+        month: months[d.getMonth()],
+        fullString: `${i === 0 ? "Today" : i === 1 ? "Tomorrow" : daysOfWeek[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`,
+        rawDate: d,
+      });
+    }
+    return slots;
+  }, []);
+
+  const timeSlots = [
+    "08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
+    "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM",
+    "06:00 PM", "07:00 PM", "08:00 PM"
+  ];
+
+  const [selectedDateIdx, setSelectedDateIdx] = useState(0);
+  const [selectedTimeIdx, setSelectedTimeIdx] = useState(7); // Default to 3:00 PM (idx 7)
+
+  useEffect(() => {
+    const dateObj = dateSlots[selectedDateIdx];
+    const timeVal = timeSlots[selectedTimeIdx];
+    if (dateObj && timeVal) {
+      setCustomTimeText(`${dateObj.fullString} at ${timeVal}`);
+    }
+  }, [selectedDateIdx, selectedTimeIdx, dateSlots]);
+
+  // Confetti points particles
+  const particles = useMemo(() => {
+    return Array.from({ length: 25 }).map((_, i) => {
+      const startX = Math.random() * 100; // % width
+      const delay = Math.random() * 1000;
+      const duration = 2000 + Math.random() * 1200;
+      const size = 5 + Math.random() * 6; // size 5 to 11
+      const colors = [COLORS.success, COLORS.primary, COLORS.warning, COLORS.info, COLORS.violet];
+      const color = colors[i % colors.length];
+
+      const animY = new Animated.Value(0);
+      const animX = new Animated.Value(0);
+
+      return {
+        id: i,
+        startX,
+        delay,
+        duration,
+        size,
+        color,
+        animY,
+        animX,
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!biz) return;
+
+    // Reset animations
+    circleScale.setValue(0);
+    pulseRing1.setValue(0);
+    pulseRing2.setValue(0);
+    slideAnims.forEach(a => a.setValue(250));
+
+    // Spring circle in
+    Animated.spring(circleScale, {
+      toValue: 1, useNativeDriver: true, tension: 40, friction: 5,
+    }).start();
+
+    // Pulse rings loop
+    Animated.parallel([
+      Animated.loop(
+        Animated.timing(pulseRing1, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        })
+      ),
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(1000),
+          Animated.timing(pulseRing2, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          })
+        ])
+      )
+    ]).start();
+
+    // Falling confetti drift
+    particles.forEach(p => {
+      p.animY.setValue(0);
+      p.animX.setValue(0);
+
+      Animated.parallel([
+        Animated.sequence([
+          Animated.delay(p.delay),
+          Animated.timing(p.animY, {
+            toValue: 1,
+            duration: p.duration,
+            useNativeDriver: true,
+          })
+        ]),
+        Animated.sequence([
+          Animated.delay(p.delay),
+          Animated.loop(
+            Animated.sequence([
+              Animated.timing(p.animX, {
+                toValue: 12,
+                duration: p.duration / 3,
+                useNativeDriver: true,
+              }),
+              Animated.timing(p.animX, {
+                toValue: -12,
+                duration: p.duration / 3,
+                useNativeDriver: true,
+              }),
+              Animated.timing(p.animX, {
+                toValue: 0,
+                duration: p.duration / 3,
+                useNativeDriver: true,
+              }),
+            ])
+          )
+        ])
+      ]).start();
+    });
+
+    // Staggered slide in follow-up cards
+    slideAnims.forEach((anim, idx) => {
+      Animated.sequence([
+        Animated.delay(600 + idx * 180),
+        Animated.spring(anim, {
+          toValue: 0,
+          friction: 8,
+          tension: 50,
+          useNativeDriver: true,
+        })
+      ]).start();
+    });
+  }, [biz]);
+
+  if (!biz) return null;
+
+  const followUps = [
+    {
+      icon: "notifications-outline",
+      when: "10 MIN BEFORE ARRIVAL",
+      msg: `Your service provider is on the way. ${biz.name ? biz.name.split(" ")[0] : "Provider"} is 8 mins away.`,
+    },
+    { icon: "star-outline", when: "AFTER SERVICE", msg: `How did it go? Tap to rate ${biz.name || "Provider"}.` },
+    { icon: "chatbubble-outline", when: "3 DAYS LATER", msg: "Hope everything went well! Need a follow-up visit?" },
+  ];
+
+  const receiptRows = [
+    { label: "Service", value: service || biz.service_category || "—" },
+    { label: "Problem", value: issueText || "Service required" },
+    { label: "Provider", value: biz.name || "—" },
+    { label: "When", value: customTimeText },
+    { label: "Location", value: locationText || biz.address || "—" },
+  ];
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onBack}>
+      <View style={tm.overlay}>
+        <View style={tm.sheet}>
+          <LinearGradient
+            colors={[COLORS.warning + "22", "transparent"]}
+            style={tm.glowBg}
+            pointerEvents="none"
+          />
+
+          <View style={tm.handle} />
+
+          {/* Confetti Particle Overlay */}
+          {particles.map(p => {
+            const translateY = p.animY.interpolate({
+              inputRange: [0, 1],
+              outputRange: [-30, 800],
+            });
+            const opacity = p.animY.interpolate({
+              inputRange: [0, 0.8, 1],
+              outputRange: [1, 1, 0],
+            });
+            return (
+              <Animated.View
+                key={p.id}
+                style={{
+                  position: "absolute",
+                  left: `${p.startX}%`,
+                  top: 0,
+                  width: p.size,
+                  height: p.size,
+                  borderRadius: p.size / 2,
+                  backgroundColor: p.color,
+                  opacity,
+                  transform: [
+                    { translateY },
+                    { translateX: p.animX },
+                  ],
+                  zIndex: 99,
+                }}
+                pointerEvents="none"
+              />
+            );
+          })}
+
+          {/* Header with Back Arrow */}
+          <View style={{
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: 20,
+            paddingTop: Platform.OS === "ios" ? 12 : 24,
+            paddingBottom: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: "rgba(255,255,255,0.06)",
+            width: "100%",
+          }}>
+            <TouchableOpacity onPress={onBack} style={{
+              width: 36, height: 36, borderRadius: 12,
+              backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: COLORS.border,
+              alignItems: "center", justifyContent: "center"
+            }}>
+              <Ionicons name="arrow-back" size={18} color={COLORS.text} />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 16, fontWeight: "900", color: COLORS.text, marginLeft: 12 }}>Booking Details</Text>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={tm.scrollContent}>
+
+            {/* Expanding Pulse Rings */}
+            <View style={tm.circleWrapper}>
+              <Animated.View
+                style={[
+                  tm.pulseRing,
+                  {
+                    borderColor: COLORS.warning,
+                    transform: [
+                      {
+                        scale: pulseRing1.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 2],
+                        }),
+                      },
+                    ],
+                    opacity: pulseRing1.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.4, 0],
+                    }),
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  tm.pulseRing,
+                  {
+                    borderColor: COLORS.warning,
+                    transform: [
+                      {
+                        scale: pulseRing2.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 2],
+                        }),
+                      },
+                    ],
+                    opacity: pulseRing2.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.4, 0],
+                    }),
+                  },
+                ]}
+              />
+
+              {/* Core animated success circle */}
+              <Animated.View
+                style={[
+                  tm.circleMain,
+                  {
+                    backgroundColor: COLORS.warning,
+                    shadowColor: COLORS.warning,
+                    transform: [{ scale: circleScale }],
+                  },
+                ]}
+              >
+                <Ionicons name="time-outline" size={44} color="#fff" />
+              </Animated.View>
+            </View>
+
+            <Text style={tm.outcomeTitle}>Booking Pending</Text>
+            <Text style={tm.outcomeSub}>AI agent will contact the provider</Text>
+
+            {/* Elegant Compact Scrolling Date & Time Selectors */}
+            <View style={{ width: "100%", marginTop: 14, gap: 12 }}>
+              
+              {/* Date Selection (Ultra Compact Pill Row) */}
+              <View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6, paddingHorizontal: 2 }}>
+                  <Ionicons name="calendar-outline" size={12} color={COLORS.primaryLight} />
+                  <Text style={{ fontSize: 10, fontWeight: "900", color: "rgba(255, 255, 255, 0.7)", letterSpacing: 0.5, textTransform: "uppercase" }}>Select Date</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 6, paddingHorizontal: 2 }}
+                >
+                  {dateSlots.map((d, idx) => {
+                    const isSelected = selectedDateIdx === idx;
+                    const dateText = idx === 0 ? "Today" : idx === 1 ? "Tomorrow" : `${d.dayName}, ${d.month} ${d.dayNum}`;
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        activeOpacity={0.85}
+                        onPress={() => setSelectedDateIdx(idx)}
+                        style={{
+                          height: 34,
+                          paddingHorizontal: 12,
+                          borderRadius: 10,
+                          borderWidth: 1,
+                          borderColor: isSelected ? COLORS.primary : "rgba(255, 255, 255, 0.08)",
+                          backgroundColor: isSelected ? "rgba(108, 99, 255, 0.15)" : "rgba(255, 255, 255, 0.03)",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 11,
+                          fontWeight: "800",
+                          color: isSelected ? "#FFFFFF" : "rgba(255, 255, 255, 0.6)",
+                        }}>
+                          {dateText}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* Time Selection (Ultra Compact Pill Row) */}
+              <View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6, paddingHorizontal: 2 }}>
+                  <Ionicons name="time-outline" size={12} color={COLORS.success} />
+                  <Text style={{ fontSize: 10, fontWeight: "900", color: "rgba(255, 255, 255, 0.7)", letterSpacing: 0.5, textTransform: "uppercase" }}>Select Time Slot</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 6, paddingHorizontal: 2 }}
+                >
+                  {timeSlots.map((t, idx) => {
+                    const isSelected = selectedTimeIdx === idx;
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        activeOpacity={0.85}
+                        onPress={() => setSelectedTimeIdx(idx)}
+                        style={{
+                          height: 34,
+                          paddingHorizontal: 12,
+                          borderRadius: 10,
+                          borderWidth: 1,
+                          borderColor: isSelected ? COLORS.success : "rgba(255, 255, 255, 0.08)",
+                          backgroundColor: isSelected ? "rgba(16, 217, 160, 0.15)" : "rgba(255, 255, 255, 0.03)",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 11,
+                          fontWeight: "800",
+                          color: isSelected ? "#FFFFFF" : "rgba(255, 255, 255, 0.6)",
+                        }}>
+                          {t}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+            </View>
+
+            {/* Space before digital receipt card */}
+            <View style={{ height: 16 }} />
+
+            {/* Digital Perforated Ticket Card */}
+            <View style={tm.receiptCard}>
+              <View style={tm.receiptHeader}>
+                <View>
+                  <Text style={tm.receiptIdLabel}>BOOKING ID</Text>
+                  <Text style={tm.receiptIdValue}>BK-NEW</Text>
+                </View>
+                <View style={[tm.statusPill, { backgroundColor: COLORS.warning + "15", borderColor: COLORS.warning + "44" }]}>
+                  <Ionicons name="time-outline" size={11} color={COLORS.warning} style={{ marginRight: 3 }} />
+                  <Text style={[tm.statusPillText, { color: COLORS.warning }]}>PENDING</Text>
+                </View>
+              </View>
+
+              {/* Perforation Punch Hole Line */}
+              <View style={tm.perforation}>
+                <View style={[tm.perfCircle, { left: -24 }]} />
+                <View style={[tm.perfCircle, { right: -24 }]} />
+                <View style={tm.perfLine} />
+              </View>
+
+              {/* Receipt Details */}
+              <View style={tm.receiptRows}>
+                {receiptRows.map((r, i) => (
+                  <View key={i} style={tm.receiptRow}>
+                    <Text style={tm.receiptRowLabel}>{r.label}</Text>
+                    <Text
+                      style={[tm.receiptRowValue, r.label === "Total" && { color: COLORS.success, fontWeight: "900" }]}
+                      numberOfLines={2}
+                    >
+                      {r.value}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {/* AI follow-ups scheduled section header */}
+            <View style={tm.sectionHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={tm.purpleVerticalBar} />
+                <Text style={tm.sectionTitle}>AI follow-ups scheduled</Text>
+              </View>
+              <View style={tm.geminiBadge}>
+                <Ionicons name="sparkles" size={10} color={COLORS.violet} />
+                <Text style={tm.geminiBadgeText}>GEMINI</Text>
+              </View>
+            </View>
+
+            {/* Follow-up Cards */}
+            <View style={{ gap: 10, width: "100%", marginTop: 8 }}>
+              {followUps.map((f, i) => (
+                <Animated.View
+                  key={i}
+                  style={[
+                    tm.followupItem,
+                    {
+                      transform: [{ translateX: slideAnims[i] }],
+                    },
+                  ]}
+                >
+                  <View style={tm.followupIcon}>
+                    <Ionicons name={f.icon} size={16} color={COLORS.violet} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={tm.followupWhen}>{f.when}</Text>
+                    <Text style={tm.followupMsg}>{f.msg}</Text>
+                  </View>
+                </Animated.View>
+              ))}
+            </View>
+
+          </ScrollView>
+
+          {/* Done Button */}
+          <View style={tm.footer}>
+            <TouchableOpacity
+              onPress={() => onDone(customTimeText, "")}
+              activeOpacity={0.85}
+              style={tm.doneBtn}
+            >
+              <LinearGradient
+                colors={[COLORS.primary, COLORS.violet]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={tm.doneBtnGrad}
+              >
+                <Ionicons name="home-outline" size={18} color="#fff" />
+                <Text style={tm.doneBtnText}>Confirm Booking & Go Home</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Service picker ────────────────────────────────────────────────────────────
-function ServicePicker({ onStart, onBack, locationText, setLocationText, gpsLoading, selected, setSelected }) {
+// ── Service picker ────────────────────────────────────────────────────────────
+function ServicePicker({ onStart, onBack, locationText, setLocationText, gpsLoading, selected, setSelected, issueText, setIssueText }) {
+  const spinValue = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Spin animation for sparkles spinner next to AI-READY
+  useEffect(() => {
+    const spinLoop = Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 3500,
+        useNativeDriver: true,
+      })
+    );
+    spinLoop.start();
+    return () => spinLoop.stop();
+  }, []);
+
+  const spin = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  // Pulse animation for Ask AI button glow
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.04, duration: 1200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      ])
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, []);
+
+  const charsCount = issueText ? issueText.length : 0;
+
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
       <SafeAreaView style={{ flex: 1 }}>
@@ -940,8 +1724,9 @@ function ServicePicker({ onStart, onBack, locationText, setLocationText, gpsLoad
             <Text style={s.liveChipText}>LIVE</Text>
           </View>
         </View>
+
         <ScrollView contentContainerStyle={s.pickScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <Text style={s.sectionLabel}>SELECT A SERVICE</Text>
+          <Text style={s.sectionLabel}>SELECT A SERVICE CATEGORY</Text>
           <View style={s.catGrid}>
             {SERVICE_CATEGORIES.slice(0, 12).map(cat => (
               <Pressable
@@ -962,7 +1747,105 @@ function ServicePicker({ onStart, onBack, locationText, setLocationText, gpsLoad
             ))}
           </View>
 
-          <Text style={s.sectionLabel}>YOUR LOCATION</Text>
+          {/* AI Console Card matching mockup exactly */}
+          <Text style={s.sectionLabel}>AI SEARCH CONSOLE</Text>
+          <View style={{
+            backgroundColor: "rgba(18, 18, 38, 0.88)",
+            borderRadius: 24,
+            borderWidth: 1,
+            borderColor: "rgba(139, 92, 246, 0.25)",
+            padding: 18,
+            marginBottom: 16,
+            shadowColor: "#8B5CF6",
+            shadowOpacity: 0.15,
+            shadowRadius: 16,
+            elevation: 8,
+          }}>
+            {/* Header Badge */}
+            <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 5, marginBottom: 6 }}>
+              <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                <Ionicons name="sparkles-outline" size={12} color="#A78BFA" />
+              </Animated.View>
+              <Text style={{ fontSize: 9.5, fontWeight: "900", color: "#A78BFA", letterSpacing: 1.2 }}>AI-READY</Text>
+            </View>
+
+            {/* Main Prompt Text Input */}
+            <TextInput
+              style={{
+                color: "#FFFFFF",
+                fontSize: 16,
+                fontWeight: "600",
+                minHeight: 74,
+                textAlignVertical: "top",
+                padding: 0,
+                lineHeight: 22,
+              }}
+              value={issueText}
+              onChangeText={setIssueText}
+              placeholder={selected ? `Describe your ${selected.toLowerCase()} issue... (e.g. leaking sink)` : "Select a service category and describe your issue here..."}
+              placeholderTextColor="rgba(255,255,255,0.35)"
+              multiline
+            />
+
+            {/* Divider */}
+            <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.06)", marginVertical: 14 }} />
+
+            {/* Bottom Actions Row */}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              {/* Tool buttons */}
+              <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                <TouchableOpacity style={{
+                  width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.04)",
+                  borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", alignItems: "center", justifyContent: "center"
+                }} activeOpacity={0.7} onPress={() => {
+                  setSelected("Plumber");
+                  setIssueText("My kitchen sink is leaking badly and I need a plumber in DHA Phase 6 today");
+                }}>
+                  <Ionicons name="mic-outline" size={16} color="rgba(255,255,255,0.65)" />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={{
+                  width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.04)",
+                  borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", alignItems: "center", justifyContent: "center"
+                }} activeOpacity={0.7}>
+                  <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.65)" />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={{
+                  width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.04)",
+                  borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", alignItems: "center", justifyContent: "center"
+                }} activeOpacity={0.7}>
+                  <Ionicons name="calendar-outline" size={16} color="rgba(255,255,255,0.65)" />
+                </TouchableOpacity>
+
+                <Text style={{ fontSize: 10.5, color: "rgba(255,255,255,0.35)", marginLeft: 6 }}>
+                  {charsCount} chars · Gemini ready
+                </Text>
+              </View>
+
+              {/* Glowing gradient Ask AI Button */}
+              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                <TouchableOpacity
+                  style={{ borderRadius: 14, overflow: "hidden", opacity: selected ? 1 : 0.4 }}
+                  onPress={() => selected && onStart()}
+                  activeOpacity={0.8}
+                  disabled={!selected}
+                >
+                  <LinearGradient
+                    colors={["#8B5CF6", "#6366F1"]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 18, paddingVertical: 11 }}
+                  >
+                    <Ionicons name="arrow-forward" size={14} color="#FFF" />
+                    <Text style={{ color: "#FFF", fontSize: 14, fontWeight: "800" }}>Ask AI</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+          </View>
+
+          {/* Location details card */}
+          <Text style={s.sectionLabel}>YOUR SEARCH LOCATION</Text>
           <View style={s.locRow}>
             <View style={[s.gpsIcon, gpsLoading
               ? { backgroundColor: COLORS.warningGlow, borderColor: COLORS.warning + "55" }
@@ -982,22 +1865,6 @@ function ServicePicker({ onStart, onBack, locationText, setLocationText, gpsLoad
               </View>
             )}
           </View>
-
-          <TouchableOpacity
-            style={[s.startBtn, !selected && { opacity: 0.35 }]}
-            onPress={() => selected && onStart()}
-            activeOpacity={0.85}
-            disabled={!selected}
-          >
-            <LinearGradient
-              colors={[COLORS.success, COLORS.successDark]}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={s.startBtnGrad}
-            >
-              <Ionicons name="wifi-outline" size={20} color="#fff" />
-              <Text style={s.startBtnText}>Start Live Radar</Text>
-            </LinearGradient>
-          </TouchableOpacity>
 
           <View style={s.noteBox}>
             <Ionicons name="information-circle-outline" size={13} color={COLORS.textMuted} />
@@ -1024,6 +1891,7 @@ export default function LiveSearchScreen({ navigation }) {
 
   const [phase, setPhase] = useState("pick");
   const [service, setService] = useState("");
+  const [problemDetails, setProblemDetails] = useState("");
   const [locText, setLocText] = useState("Detecting...");
   const [gpsLoad, setGpsLoad] = useState(true);
   const [gpsCoords, setGpsCoords] = useState(null);
@@ -1186,6 +2054,8 @@ export default function LiveSearchScreen({ navigation }) {
         gpsLoading={gpsLoad}
         selected={service}
         setSelected={setService}
+        issueText={problemDetails}
+        setIssueText={setProblemDetails}
       />
     );
   }
@@ -1287,7 +2157,7 @@ export default function LiveSearchScreen({ navigation }) {
             <Text style={s.glassTitle} numberOfLines={1}>{service} · {locText}</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
               {phase === "scanning"
-                ? <><View style={s.liveDotGreen} /><Text style={s.glassSub}>Scanning · {fakeFound} found</Text></>
+                ? <><View style={s.liveDotGreen} /><Text style={s.glassSub}>Scanning radar area...</Text></>
                 : <><Ionicons name="checkmark-circle" size={10} color={COLORS.success} /><Text style={s.glassSub}>{displayCount} live providers near you</Text></>
               }
             </View>
@@ -1312,16 +2182,33 @@ export default function LiveSearchScreen({ navigation }) {
         onBook={(biz) => setBookingBiz(biz)}
       />
 
-      {/* AI Booking Modal */}
-      <BookingModal
-        visible={!!bookingBiz}
-        biz={bookingBiz}
-        service={service}
-        searchLocation={locText}
-        userName={userProfile?.name || "Customer"}
-        userPhone={userProfile?.phone || null}
-        onClose={() => setBookingBiz(null)}
-      />
+      {/* Booking Pending Overlay */}
+      {bookingBiz && (
+        <BookingPendingOverlay
+          biz={bookingBiz}
+          service={service}
+          locationText={locText}
+          issueText={problemDetails}
+          onBack={() => setBookingBiz(null)}
+          onDone={(date, time) => {
+            API.initiateCall({
+              provider_phone: toE164(bookingBiz?.phone),
+              provider_name: bookingBiz?.name || "Provider",
+              user_name: userProfile?.name || "Customer",
+              user_address: locText || bookingBiz?.address || "",
+              problem: problemDetails || service || "Service required",
+              service_type: service || "Service",
+              preferred_time: time ? `${date} at ${time}` : date,
+              language: "ur",
+              user_phone: userProfile?.phone || null,
+              booking_id: null,
+              user_id: userProfile?.uid || null,
+            }).catch(() => { });
+            setBookingBiz(null);
+            navigation.navigate("UserTabs", { screen: "Home" });
+          }}
+        />
+      )}
 
       {/* Floating pill */}
       {!sheetOpen && displayCount > 0 && (
@@ -1333,64 +2220,77 @@ export default function LiveSearchScreen({ navigation }) {
               style={s.floatingPillGrad}
             >
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.danger }} />
-              <Text style={s.floatingPillText}>View {displayCount} results</Text>
+              <Text style={s.floatingPillText}>View results</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Stunning Glassmorphic Bottom Navigation Tab Bar overlay matching the mockup exactly */}
+      {/* Stunning Glassmorphic Bottom Navigation Tab Bar overlay matching global tabs exactly */}
       <View style={s.bottomTab}>
+        {/* Tab 1: Home */}
         <TouchableOpacity
           style={s.tabItem}
           activeOpacity={0.7}
           onPress={() => navigation.navigate("UserTabs", { screen: "Home" })}
         >
-          <Ionicons name="home-outline" size={20} color={COLORS.textMuted} />
+          <Ionicons name="home-outline" size={22} color={COLORS.textMuted} />
           <Text style={s.tabLabel}>Home</Text>
         </TouchableOpacity>
 
+        {/* Tab 2: Bookings */}
         <TouchableOpacity
-          style={s.tabItemActive}
+          style={s.tabItem}
           activeOpacity={0.7}
-          onPress={rescan}
+          onPress={() => navigation.navigate("UserTabs", { screen: "BookingHistory" })}
         >
-          <View style={s.tabActiveBar} />
-          <Ionicons name="wifi" size={20} color={COLORS.success} />
-          <Text style={[s.tabLabel, { color: COLORS.success, fontWeight: "800" }]}>Live</Text>
+          <Ionicons name="receipt-outline" size={22} color={COLORS.textMuted} />
+          <Text style={s.tabLabel}>Bookings</Text>
         </TouchableOpacity>
 
+        {/* Tab 3: Centered Ask AI (Active glowing violet sparkles button) */}
         <View style={s.tabCenterContainer}>
           <TouchableOpacity
-            style={s.tabCenterButton}
+            style={[s.tabCenterButton, {
+              backgroundColor: COLORS.violet || "#8B5CF6",
+              shadowColor: COLORS.violet || "#8B5CF6",
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.65,
+              shadowRadius: 14,
+              elevation: 10,
+              borderWidth: 3,
+              borderColor: "#070710",
+            }]}
             activeOpacity={0.85}
-            onPress={() => navigation.navigate("Search")}
+            onPress={rescan}
           >
             <LinearGradient
               colors={["#8B5CF6", "#6366F1"]}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={s.tabCenterGrad}
             >
-              <Ionicons name="sparkles" size={22} color="#FFFFFF" />
+              <Ionicons name="sparkles" size={24} color="#FFFFFF" />
             </LinearGradient>
           </TouchableOpacity>
         </View>
 
+        {/* Tab 4: Inbox (Notifications) */}
         <TouchableOpacity
           style={s.tabItem}
           activeOpacity={0.7}
-          onPress={() => navigation.navigate("UserTabs", { screen: "BookingHistory" })}
+          onPress={() => navigation.navigate("UserTabs", { screen: "Notifications" })}
         >
-          <Ionicons name="receipt-outline" size={20} color={COLORS.textMuted} />
-          <Text style={s.tabLabel}>Bookings</Text>
+          <Ionicons name="notifications-outline" size={22} color={COLORS.textMuted} />
+          <Text style={s.tabLabel}>Inbox</Text>
         </TouchableOpacity>
 
+        {/* Tab 5: Profile */}
         <TouchableOpacity
           style={s.tabItem}
           activeOpacity={0.7}
           onPress={() => navigation.navigate("UserTabs", { screen: "Profile" })}
         >
-          <Ionicons name="person-outline" size={20} color={COLORS.textMuted} />
+          <Ionicons name="person-circle-outline" size={22} color={COLORS.textMuted} />
           <Text style={s.tabLabel}>Profile</Text>
         </TouchableOpacity>
       </View>
@@ -1444,7 +2344,7 @@ const s = StyleSheet.create({
   floatingPillGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999 },
   floatingPillText: { color: "#fff", fontSize: 13, fontWeight: "800" },
   // Sheet
-  sheet: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: 440, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: "rgba(13,13,28,0.97)", borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: COLORS.borderLight, shadowColor: "#000", shadowOpacity: 0.6, shadowRadius: 20, elevation: 10, zIndex: 30 },
+  sheet: { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: 440, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: "rgba(13,13,28,0.97)", borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: COLORS.borderLight, shadowColor: "#000", shadowOpacity: 0.6, shadowRadius: 20, elevation: 10, zIndex: 50 },
   sheetHead: { flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   sheetCount: { fontSize: 24, fontWeight: "900", color: COLORS.text, letterSpacing: -0.8 },
   sheetCountSub: { fontSize: 12, color: COLORS.textSecondary, fontWeight: "600" },
@@ -1591,4 +2491,66 @@ const s = StyleSheet.create({
     fontWeight: "600",
     color: COLORS.textMuted,
   },
+});
+
+const tm = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: COLORS.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1,
+    borderColor: COLORS.borderLight, maxHeight: "92%", paddingBottom: 24,
+    position: "relative", overflow: "hidden",
+  },
+  glowBg: { position: "absolute", top: 0, left: 0, right: 0, height: 160 },
+  handle: { width: 44, height: 4, borderRadius: 2, backgroundColor: COLORS.borderLight, alignSelf: "center", marginTop: 10, marginBottom: 4 },
+  centered: { alignItems: "center", padding: 40 },
+  scrollContent: { alignItems: "center", padding: 24, paddingBottom: 130, width: "100%" },
+  loadingText: { fontSize: 13, color: COLORS.textSecondary, marginTop: 8 },
+
+  circleWrapper: { width: 140, height: 140, alignItems: "center", justifyContent: "center", marginVertical: 10, position: "relative" },
+  pulseRing: { position: "absolute", width: 92, height: 92, borderRadius: 46, borderWidth: 2 },
+  circleMain: { width: 92, height: 92, borderRadius: 46, alignItems: "center", justifyContent: "center", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.45, shadowRadius: 16, elevation: 8 },
+
+  outcomeTitle: { fontSize: 24, fontWeight: "900", color: COLORS.text, marginTop: 8, letterSpacing: -0.6, textAlign: "center" },
+  outcomeSub: { fontSize: 13, color: COLORS.textSecondary, textAlign: "center", marginTop: 6, marginBottom: 20 },
+
+  receiptCard: { width: "100%", backgroundColor: COLORS.card, borderRadius: 18, borderWidth: 1, borderColor: COLORS.borderLight, padding: 16, position: "relative", overflow: "hidden" },
+  receiptHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  receiptIdLabel: { fontSize: 9, fontWeight: "800", color: COLORS.textMuted, letterSpacing: 1.2 },
+  receiptIdValue: { fontSize: 14, fontWeight: "800", color: COLORS.text, fontFamily: "Courier New", marginTop: 2 },
+  statusPill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
+  statusPillText: { fontSize: 10, fontWeight: "800" },
+
+  perforation: { flexDirection: "row", alignItems: "center", height: 16, marginVertical: 14, position: "relative" },
+  perfCircle: { position: "absolute", width: 14, height: 14, borderRadius: 7, backgroundColor: COLORS.bg, zIndex: 5 },
+  perfLine: { flex: 1, borderStyle: "dashed", borderWidth: 1, borderColor: COLORS.borderLight, height: 0 },
+
+  receiptRows: { gap: 10 },
+  receiptRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
+  receiptRowLabel: { fontSize: 12, color: COLORS.textSecondary },
+  receiptRowValue: { fontSize: 12, fontWeight: "700", color: COLORS.text, textAlign: "right", flex: 1 },
+
+  suggestedBox: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: COLORS.surface, borderRadius: 14, padding: 12, marginTop: 14, borderWidth: 1, borderColor: COLORS.warning + "44", width: "100%" },
+  suggestedLabel: { fontSize: 9, fontWeight: "800", color: COLORS.warning, letterSpacing: 1.2, marginBottom: 2 },
+  suggestedValue: { fontSize: 15, fontWeight: "900", color: COLORS.warning },
+
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%", marginTop: 24, marginBottom: 8 },
+  purpleVerticalBar: { width: 3, height: 14, backgroundColor: COLORS.violet, borderRadius: 2 },
+  sectionTitle: { fontSize: 13, fontWeight: "800", color: COLORS.text },
+  geminiBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.violet + "15", borderWidth: 1, borderColor: COLORS.violet + "33", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  geminiBadgeText: { fontSize: 9, fontWeight: "800", color: COLORS.violet, letterSpacing: 0.5 },
+
+  followupItem: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: COLORS.card, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, padding: 12, width: "100%" },
+  followupIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: COLORS.violet + "18", borderWidth: 1, borderColor: COLORS.violet + "44", alignItems: "center", justifyContent: "center" },
+  followupWhen: { fontSize: 9, fontWeight: "800", color: COLORS.violet, letterSpacing: 0.6 },
+  followupMsg: { fontSize: 12, color: COLORS.text, marginTop: 2, lineHeight: 16 },
+
+  transcriptBox: { width: "100%", backgroundColor: COLORS.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: COLORS.border, marginTop: 14 },
+  transcriptLabel: { fontSize: 8, fontWeight: "800", color: COLORS.textMuted, letterSpacing: 1.2, marginBottom: 6 },
+  transcriptText: { fontSize: 10.5, color: COLORS.textSecondary, lineHeight: 16, fontFamily: "Courier New" },
+
+  footer: { paddingHorizontal: 20, paddingTop: 12, width: "100%", paddingBottom: 24 },
+  doneBtn: { width: "100%", borderRadius: 16, overflow: "hidden" },
+  doneBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15 },
+  doneBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
 });

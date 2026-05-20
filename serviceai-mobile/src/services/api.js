@@ -189,7 +189,14 @@ export const API = {
     request("/api/schedule-followups", "POST", confirmation),
 
   // Booking management
-  getAllBookings: () => request("/api/bookings"),
+  getAllBookings: (userId = null) => {
+    const qs = userId ? `?user_id=${userId}` : "";
+    return request(`/api/bookings${qs}`);
+  },
+  getAnalytics: (userId) => {
+    if (!userId) return Promise.resolve(null);
+    return request(`/api/analytics?user_id=${userId}`);
+  },
   getBooking: (bookingId) => request(`/api/bookings/${bookingId}`),
   updateBookingStatus: (bookingId, status) =>
     request(`/api/bookings/${bookingId}/status`, "PUT", { status }),

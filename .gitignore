@@ -7,3 +7,28 @@ node_modules/
 skills/
 *.pdf
 .DS_Store
+
+# Python cache
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Scraper output artifacts (auto-generated, not needed in repo)
+serviceai-backend/*_data.json
+serviceai-backend/*_report.txt
+serviceai-backend/*.txt
+serviceai-backend/*.json
+
+# SQLite database (local data, should not be committed)
+serviceai-backend/data/*.db
+serviceai-backend/*.db
+
+# Virtual environments
+venv/
+env/
+.venv/

@@ -39,7 +39,7 @@ def _create_confirmed_booking(body: InitiateCallRequest, confirmed_time: str) ->
         "provider_id":      body.provider_phone,
         "provider_name":    body.provider_name,
         "service":          body.service_type or "Service",
-        "user_id":          None,
+        "user_id":          body.user_id,
         "user_name":        body.user_name,
         "user_location":    None,
         "location_address": body.user_address or "",
@@ -66,7 +66,7 @@ def _create_pending_booking(body: InitiateCallRequest, suggested_time: str, log_
         "provider_id":      body.provider_phone,
         "provider_name":    body.provider_name,
         "service":          body.service_type or "Service",
-        "user_id":          None,
+        "user_id":          body.user_id,
         "user_name":        body.user_name,
         "user_location":    None,
         "location_address": body.user_address or "",
@@ -409,6 +409,8 @@ async def _run_inquiry_bg(log_id: int, body: InitiateCallRequest):
             language=body.language,
         )
         print(f"[BG #{log_id}] ✅  Call ended  |  VAPI call_id={call_id}  status={call_status}")
+        preview = transcript[:300].replace("\n", " | ") if transcript else "<empty>"
+        print(f"[BG #{log_id}] 📝  Transcript ({len(transcript)} chars): {preview}")
         print(f"[BG #{log_id}] 🧠  Analyzing transcript ({len(transcript)} chars)...")
         analysis = analyze_provider_response(transcript, requested_time=body.preferred_time)
         print(f"[BG #{log_id}] 📊  Outcome={analysis['outcome']}  confidence={analysis.get('confidence', '?')}")
@@ -446,7 +448,17 @@ async def _run_inquiry_bg(log_id: int, body: InitiateCallRequest):
 
     except Exception as exc:
         traceback.print_exc()
-        print(f"[BG #{log_id}] ❌  Call FAILED: {exc}\n")
+        err_msg = str(exc) or type(exc).__name__
+        print(f"[BG #{log_id}] ❌  Call FAILED: {err_msg}\n")
+        try:
+            update_call_log(
+                log_id,
+                status="FAILED",
+                reason=err_msg,
+                completed_at=datetime.now(timezone.utc).isoformat(),
+            )
+        except Exception:
+            pass
         update_call_log(
             log_id,
             status="FAILED",

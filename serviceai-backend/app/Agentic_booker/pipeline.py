@@ -22,6 +22,7 @@ import json
 import math
 import os
 import re
+import random
 import sys
 import time
 from pathlib import Path
@@ -247,7 +248,7 @@ def _save_json(service: str, location: str, businesses: list, out_dir: str) -> s
 def run_pipeline(
     service: str = "",
     user_address: str = "",
-    max_results: int = 5,
+    max_results: int = None,
     max_reviews: int = 10,
     headless: bool = False,
     out_dir: str = ".",
@@ -267,6 +268,11 @@ def run_pipeline(
         report_path  — path to saved report txt file
     """
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+    # Randomise result count between 2 and 5 if caller did not specify
+    if max_results is None:
+        max_results = random.randint(2, 5)
+    print(f"[pipeline] max_results={max_results}")
 
     txt_path   = ""
     txt_content = ""
