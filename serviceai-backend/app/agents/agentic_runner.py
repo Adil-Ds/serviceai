@@ -78,14 +78,29 @@ async def run_agentic_loop(
         iterations += 1
 
         try:
-            response = await client.chat.completions.create(
-                model=AGENT_MODEL,
-                messages=messages,
-                tools=REGISTERED_TOOLS,
-                tool_choice="auto",
-                temperature=0.1,
-                max_tokens=2048,
-            )
+            try:
+                response = await client.chat.completions.create(
+                    model=AGENT_MODEL,
+                    messages=messages,
+                    tools=REGISTERED_TOOLS,
+                    tool_choice="auto",
+                    temperature=0.1,
+                    max_tokens=2048,
+                )
+            except Exception as api_exc:
+                exc_str = str(api_exc)
+                if "429" in exc_str or "rate_limit" in exc_str.lower() or "limit reached" in exc_str.lower():
+                    print(f"[agentic_runner] Rate limit hit for {AGENT_MODEL}. Falling back to llama-3.1-8b-instant...")
+                    response = await client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=messages,
+                        tools=REGISTERED_TOOLS,
+                        tool_choice="auto",
+                        temperature=0.1,
+                        max_tokens=2048,
+                    )
+                else:
+                    raise
         except Exception as api_exc:
             exc_str = str(api_exc)
             if "429" in exc_str or "rate_limit" in exc_str.lower() or "quota" in exc_str.lower():

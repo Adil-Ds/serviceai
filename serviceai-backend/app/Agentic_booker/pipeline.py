@@ -33,6 +33,26 @@ from groq import Groq
 # Load .env from serviceai-backend root (3 levels up from this file)
 load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
+def create_completion_with_fallback(client, **kwargs):
+    model = kwargs.get("model", "llama-3.3-70b-versatile")
+    fallbacks = ["llama-3.1-8b-instant", "llama3-8b-8192", "gemma2-9b-it"]
+    try:
+        return client.chat.completions.create(**kwargs)
+    except Exception as e:
+        err_str = str(e)
+        if "429" in err_str or "rate_limit" in err_str.lower() or "limit reached" in err_str.lower():
+            print(f"\n[pipeline] Rate limit exceeded on model '{model}'. Attempting automatic fallback...")
+            for fb in fallbacks:
+                if fb == model:
+                    continue
+                try:
+                    print(f"[pipeline] Trying fallback model '{fb}'...")
+                    kwargs["model"] = fb
+                    return client.chat.completions.create(**kwargs)
+                except Exception as ex:
+                    print(f"[pipeline] Fallback to '{fb}' failed: {ex}")
+        raise e
+
 # Allow bare `import scraper` since pipeline.py lives next to scraper.py
 sys.path.insert(0, str(Path(__file__).parent))
 import scraper as _scraper
@@ -320,7 +340,8 @@ def run_pipeline(
 
         # ── 1. LLM calls the scraper tool ─────────────────────────────────────
         print("[pipeline] Asking LLM to invoke scrape tool...")
-        resp = client.chat.completions.create(
+        resp = create_completion_with_fallback(
+            client,
             model=model,
             messages=messages,
             tools=[_TOOL],
@@ -463,7 +484,8 @@ def run_pipeline(
 
     # ── 7. LLM writes the report ───────────────────────────────────────────────
     print("[pipeline] Generating LLM report...")
-    report_resp = client.chat.completions.create(
+    report_resp = create_completion_with_fallback(
+        client,
         model=model,
         messages=messages,
         max_tokens=2048,

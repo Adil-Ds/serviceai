@@ -89,6 +89,106 @@
       "timestamp": "2026-05-18T12:50:02.187827",
       "total_found": 10,
       "source": "openstreetmap"
+    },
+    {
+      "file": "plumber_amar_sidhu__lahore_20260519_192907.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\plumber_amar_sidhu__lahore_20260519_192907.json",
+      "service_type": "plumber",
+      "location": "Amar Sidhu, Lahore, Punjab",
+      "city": "Lahore",
+      "timestamp": "2026-05-19T19:29:07.092253",
+      "total_found": 0,
+      "source": "ddg_text"
+    },
+    {
+      "file": "plumber_amar_sidhu__lahore_20260519_192916.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\plumber_amar_sidhu__lahore_20260519_192916.json",
+      "service_type": "plumber",
+      "location": "Amar Sidhu, Lahore, Punjab",
+      "city": "Lahore",
+      "timestamp": "2026-05-19T19:29:16.351316",
+      "total_found": 0,
+      "source": "ddg_text"
+    },
+    {
+      "file": "plumber_amar_sidhu__lahore_20260519_193250.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\plumber_amar_sidhu__lahore_20260519_193250.json",
+      "service_type": "plumber",
+      "location": "Amar Sidhu, Lahore, Punjab",
+      "city": "Lahore",
+      "timestamp": "2026-05-19T19:32:50.963423",
+      "total_found": 0,
+      "source": "ddg_text"
+    },
+    {
+      "file": "plumber_amar_sidhu__lahore_20260519_193420.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\plumber_amar_sidhu__lahore_20260519_193420.json",
+      "service_type": "plumber",
+      "location": "Amar Sidhu, Lahore, Punjab",
+      "city": "Lahore",
+      "timestamp": "2026-05-19T19:34:20.541079",
+      "total_found": 10,
+      "source": "ddg_text"
+    },
+    {
+      "file": "plumber_amar_sidhu__lahore_20260519_194049.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\plumber_amar_sidhu__lahore_20260519_194049.json",
+      "service_type": "plumber",
+      "location": "Amar Sidhu, Lahore, Punjab",
+      "city": "Lahore",
+      "timestamp": "2026-05-19T19:40:49.050436",
+      "total_found": 10,
+      "source": "ddg_text"
+    },
+    {
+      "file": "plumber_amar_sidhu__lahore_20260519_194712.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\plumber_amar_sidhu__lahore_20260519_194712.json",
+      "service_type": "plumber",
+      "location": "Amar Sidhu, Lahore, Punjab",
+      "city": "Lahore",
+      "timestamp": "2026-05-19T19:47:12.022222",
+      "total_found": 10,
+      "source": "ddg_text"
+    },
+    {
+      "file": "ac_repair_gulshan_e_iqbal_kara_20260519_195859.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\ac_repair_gulshan_e_iqbal_kara_20260519_195859.json",
+      "service_type": "AC repair",
+      "location": "Gulshan-e-Iqbal Karachi",
+      "city": "Karachi",
+      "timestamp": "2026-05-19T19:58:59.832303",
+      "total_found": 10,
+      "source": "ddg_text"
+    },
+    {
+      "file": "electrician_gulshan_e_iqbal_kara_20260519_195944.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\electrician_gulshan_e_iqbal_kara_20260519_195944.json",
+      "service_type": "electrician",
+      "location": "Gulshan-e-Iqbal Karachi",
+      "city": "Karachi",
+      "timestamp": "2026-05-19T19:59:44.901237",
+      "total_found": 10,
+      "source": "openstreetmap"
+    },
+    {
+      "file": "plumber_amar_sidhu__lahore_20260519_200044.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\plumber_amar_sidhu__lahore_20260519_200044.json",
+      "service_type": "plumber",
+      "location": "Amar Sidhu, Lahore, Punjab",
+      "city": "Lahore",
+      "timestamp": "2026-05-19T20:00:44.613557",
+      "total_found": 10,
+      "source": "ddg_text"
+    },
+    {
+      "file": "plumber_amar_sidhu__lahore_20260519_201355.json",
+      "path": "D:\\Projects\\Semester 4\\Hackathon\\serviceai-backend\\data\\scraped_results\\plumber_amar_sidhu__lahore_20260519_201355.json",
+      "service_type": "plumber",
+      "location": "Amar Sidhu, Lahore, Punjab",
+      "city": "Lahore",
+      "timestamp": "2026-05-19T20:13:55.709617",
+      "total_found": 10,
+      "source": "ddg_text"
     }
   ]
 }

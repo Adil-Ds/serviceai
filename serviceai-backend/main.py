@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
 from app.api.streaming import router as streaming_router
+from app.api.caller_routes import router as caller_router
 from app.database.db import init_db
 
 app = FastAPI(
@@ -24,6 +25,7 @@ app.add_middleware(
 
 app.include_router(router)
 app.include_router(streaming_router)
+app.include_router(caller_router)
 
 
 @app.on_event("startup")  # noqa: deprecated in FastAPI 0.95+ but still works

@@ -91,6 +91,9 @@ def make_driver(headless: bool = False) -> uc.Chrome:
     opts.add_argument('--no-default-browser-check')
     opts.add_argument('--window-size=1400,900')
     opts.add_argument('--disable-notifications')
+    # Move window off-screen so it doesn't appear on the user's desktop.
+    # True headless is NOT used — Google detects it and returns empty results.
+    opts.add_argument('--window-position=-32000,-32000')
     if headless:
         opts.add_argument('--headless=new')
     return uc.Chrome(options=opts)
@@ -879,7 +882,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Google Business Scraper')
     parser.add_argument('service',    help='Service type  e.g. "electrician"')
     parser.add_argument('location',   help='Location      e.g. "Lahore"')
-    parser.add_argument('--results',  type=int, default=10)
+    parser.add_argument('--results',  type=int, default=5)
     parser.add_argument('--reviews',  type=int, default=20)
     parser.add_argument('--out',      default='.')
     parser.add_argument('--headless', action='store_true')

@@ -12,6 +12,9 @@ def get_connection():
 
 
 def init_db():
+    from app.Agentic_Caller.call_store import init_call_logs_table
+    init_call_logs_table()
+
     conn = get_connection()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS bookings (
@@ -19,16 +22,33 @@ def init_db():
             provider_id TEXT NOT NULL,
             provider_name TEXT NOT NULL,
             service TEXT NOT NULL,
+            user_id TEXT,
             user_name TEXT NOT NULL,
+            user_location TEXT,
             location_address TEXT NOT NULL,
             date TEXT NOT NULL,
             time_slot TEXT NOT NULL,
             price_agreed INTEGER NOT NULL,
             status TEXT DEFAULT 'PENDING',
             phone TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            suggested_time TEXT,
+            call_log_id INTEGER
         )
     """)
+    # Self-healing migrations for existing databases:
+    for col, definition in [
+        ("user_id",       "TEXT"),
+        ("user_location", "TEXT"),
+        ("suggested_time","TEXT"),
+        ("call_log_id",   "INTEGER"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE bookings ADD COLUMN {col} {definition}")
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+
     # Remove duplicate slots before creating the unique index (safe on re-runs).
     conn.execute("""
         DELETE FROM bookings
@@ -60,18 +80,23 @@ def init_db():
 def insert_booking(booking: dict):
     """Insert a booking dict that uses 'booking_id' as the primary key field."""
     conn = get_connection()
+    row = {
+        **booking,
+        "suggested_time": booking.get("suggested_time"),
+        "call_log_id":    booking.get("call_log_id"),
+    }
     try:
         conn.execute("""
             INSERT INTO bookings (
-                id, provider_id, provider_name, service,
-                user_name, location_address, date, time_slot,
-                price_agreed, status, phone, created_at
+                id, provider_id, provider_name, service, user_id,
+                user_name, user_location, location_address, date, time_slot,
+                price_agreed, status, phone, created_at, suggested_time, call_log_id
             ) VALUES (
-                :booking_id, :provider_id, :provider_name, :service,
-                :user_name, :location_address, :date, :time_slot,
-                :price_agreed, :status, :phone, :created_at
+                :booking_id, :provider_id, :provider_name, :service, :user_id,
+                :user_name, :user_location, :location_address, :date, :time_slot,
+                :price_agreed, :status, :phone, :created_at, :suggested_time, :call_log_id
             )
-        """, booking)
+        """, row)
         conn.commit()
     except sqlite3.IntegrityError as e:
         if "UNIQUE constraint failed" in str(e):
@@ -82,6 +107,41 @@ def insert_booking(booking: dict):
         raise ValueError(f"Booking failed: {e}")
     finally:
         conn.close()
+
+
+def update_booking_confirmed(booking_id: str, confirmed_time: str):
+    """Flip a booking to CONFIRMED and set its final confirmed time."""
+    conn = get_connection()
+    conn.execute(
+        """UPDATE bookings
+           SET status = 'CONFIRMED', time_slot = ?, date = ?,
+               suggested_time = NULL, call_log_id = NULL
+           WHERE id = ?""",
+        (confirmed_time, confirmed_time, booking_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_pending_booking(booking_id: str, suggested_time: str, call_log_id: int):
+    """Update a PENDING AI booking with a new suggested time and latest call log ID."""
+    conn = get_connection()
+    conn.execute(
+        """UPDATE bookings
+           SET suggested_time = ?, call_log_id = ?, status = 'PENDING'
+           WHERE id = ?""",
+        (suggested_time, call_log_id, booking_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def cancel_booking(booking_id: str):
+    """Mark a booking as CANCELLED."""
+    conn = get_connection()
+    conn.execute("UPDATE bookings SET status = 'CANCELLED' WHERE id = ?", (booking_id,))
+    conn.commit()
+    conn.close()
 
 
 def get_booking(booking_id: str):

@@ -66,12 +66,25 @@ Keep messages short, friendly, in English. Include booking ID {booking.booking_i
 
     raw = ""
     try:
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
-            max_tokens=512,
-        )
+        try:
+            response = await client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=512,
+            )
+        except Exception as api_exc:
+            exc_str = str(api_exc)
+            if "429" in exc_str or "rate_limit" in exc_str.lower() or "limit reached" in exc_str.lower():
+                print("[followup_agent] Rate limit exceeded on llama-3.3-70b-versatile. Falling back to llama-3.1-8b-instant...")
+                response = await client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.4,
+                    max_tokens=512,
+                )
+            else:
+                raise
         raw = (response.choices[0].message.content or "").strip()
     except Exception as exc:
         print(f"[followup_agent] Groq call failed: {exc}")

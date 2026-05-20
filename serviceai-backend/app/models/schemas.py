@@ -51,7 +51,9 @@ class BookingRequest(BaseModel):
     provider_id: str
     provider_name: str
     service_category: str
+    user_id: Optional[str] = "GUEST"
     user_name: str
+    user_location: Optional[str] = ""
     location_address: str
     date: str
     time_slot: str
@@ -63,7 +65,9 @@ class BookingConfirmation(BaseModel):
     provider_id: str
     provider_name: str
     service: str
+    user_id: Optional[str] = "GUEST"
     user_name: str
+    user_location: Optional[str] = ""
     location_address: str
     date: str
     time_slot: str
@@ -151,3 +155,36 @@ class AgentRunResult(BaseModel):
     model: str = "llama-3.3-70b-versatile"
     clarification: Optional[Dict[str, Any]] = None
     web_results: Optional[List[Dict[str, Any]]] = None
+
+
+# ─── Agentic Caller models ────────────────────────────────────────────────────
+
+class InitiateCallRequest(BaseModel):
+    provider_phone: str          # E.164 format, e.g. +923001234567
+    provider_name: str
+    user_name: str
+    user_address: str
+    problem: str
+    service_type: str
+    preferred_time: str
+    language: str = "en"
+    user_phone: Optional[str] = None   # stored for reference  ← added from Schema 2
+    booking_id: Optional[str] = None
+
+
+class ConfirmCallRequest(BaseModel):
+    call_log_id: int        # returned by /initiate — all context is looked up from this
+    user_decision: str      # "ACCEPT" | "COUNTER"
+    user_proposed_time: Optional[str] = None  # only required when user_decision=COUNTER
+
+
+class CallConclusion(BaseModel):
+    call_log_id: int
+    call_id: Optional[str] = None
+    outcome: str                 # ACCEPTED | REJECTED | SUGGESTED_TIME | NO_ANSWER | USER_REJECTED
+    suggested_time: Optional[str] = None
+    reason: str = ""
+    confidence: float = 0.0
+    transcript: Optional[str] = None
+    call_status: Optional[str] = None
+    booking_id: Optional[str] = None
