@@ -86,7 +86,10 @@ def fetch_website_emails(url: str) -> list:
 
 def get_chrome_major_version() -> int:
     import platform
-    if platform.system() == "Windows":
+    import subprocess as _sp
+    system = platform.system()
+
+    if system == "Windows":
         try:
             import winreg
             reg_paths = [
@@ -104,10 +107,30 @@ def get_chrome_major_version() -> int:
                     pass
         except Exception:
             pass
-        return 148  # Default known version from tracebacks
+        return 148
+
+    if system == "Linux":
+        for cmd in [
+            ["google-chrome", "--version"],
+            ["google-chrome-stable", "--version"],
+            ["chromium-browser", "--version"],
+            ["chromium", "--version"],
+        ]:
+            try:
+                out = _sp.run(cmd, capture_output=True, text=True, timeout=5).stdout
+                m = re.search(r'(\d+)\.\d+', out)
+                if m:
+                    return int(m.group(1))
+            except Exception:
+                continue
+
     return None
 
+
 def make_driver(headless: bool = False) -> uc.Chrome:
+    import os
+    import platform
+
     opts = uc.ChromeOptions()
     opts.add_argument('--lang=en-US')
     opts.add_argument('--no-first-run')
@@ -115,29 +138,47 @@ def make_driver(headless: bool = False) -> uc.Chrome:
     opts.add_argument('--window-size=1400,900')
     opts.add_argument('--disable-notifications')
     opts.add_argument('--no-sandbox')
+    opts.add_argument('--disable-setuid-sandbox')
     opts.add_argument('--disable-dev-shm-usage')
     opts.add_argument('--disable-gpu')
-    # Opened visibly as requested so you can monitor progress.
+
+    if platform.system() == "Linux":
+        # Ensure Chrome finds the Xvfb virtual display
+        if not os.environ.get('DISPLAY'):
+            os.environ['DISPLAY'] = ':99'
+        # Point uc at the system Chrome binary
+        for _path in ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+                      '/usr/bin/chromium-browser', '/usr/bin/chromium']:
+            if os.path.exists(_path):
+                opts.binary_location = _path
+                break
+
     if headless:
         opts.add_argument('--headless=new')
-    
+
     v_main = get_chrome_major_version()
     print(f"[scraper] Detected Chrome major version: {v_main}")
     try:
-        return uc.Chrome(options=opts, use_subprocess=False, version_main=v_main)
+        return uc.Chrome(options=opts, use_subprocess=True, version_main=v_main)
     except Exception as e:
         print(f"[scraper] uc.Chrome init failed with version_main={v_main}: {e}. Retrying without version_main...")
         try:
-            return uc.Chrome(options=opts, use_subprocess=False)
+            return uc.Chrome(options=opts, use_subprocess=True)
         except Exception as e2:
-            print(f"[scraper] uc.Chrome fallback failed: {e2}. Attempting simple selenium chrome driver...")
+            print(f"[scraper] uc.Chrome fallback failed: {e2}. Attempting plain selenium ChromeDriver...")
             from selenium import webdriver
             from selenium.webdriver.chrome.options import Options
             co = Options()
-            co.add_argument('--headless')
+            co.add_argument('--headless=new')
             co.add_argument('--no-sandbox')
+            co.add_argument('--disable-setuid-sandbox')
             co.add_argument('--disable-dev-shm-usage')
             co.add_argument('--disable-gpu')
+            if platform.system() == "Linux":
+                for _path in ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable']:
+                    if os.path.exists(_path):
+                        co.binary_location = _path
+                        break
             return webdriver.Chrome(options=co)
 
 
