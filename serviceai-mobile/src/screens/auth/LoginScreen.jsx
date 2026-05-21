@@ -9,6 +9,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../contexts/AuthContext";
 import { COLORS, FONTS, RADIUS, SHADOWS } from "../../constants/theme";
+import BrandLogo from "../../components/BrandLogo";
 
 function PremiumInput({ label, value, onChange, placeholder, keyboard = "default", secure, toggleSecure, icon }) {
   const [focused, setFocused] = useState(false);
@@ -99,7 +100,10 @@ export default function LoginScreen({ route, navigation }) {
                 </Text>
               </View>
               <Text style={styles.title}>Welcome back</Text>
-              <Text style={styles.subtitle}>Sign in to continue to ServiceAI</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <Text style={styles.subtitle}>Sign in to continue to </Text>
+                <BrandLogo size={14} letterSpacing={0} />
+              </View>
             </View>
 
             {/* Form */}

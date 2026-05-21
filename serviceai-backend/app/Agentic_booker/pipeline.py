@@ -27,6 +27,7 @@ import sys
 import time
 from pathlib import Path
 
+
 import requests
 from dotenv import load_dotenv
 from groq import Groq
@@ -248,7 +249,7 @@ def _save_json(service: str, location: str, businesses: list, out_dir: str) -> s
 def run_pipeline(
     service: str = "",
     user_address: str = "",
-    max_results: int = None,
+    max_results: int = random.randint(2, 5),
     max_reviews: int = 10,
     headless: bool = False,
     out_dir: str = ".",
@@ -269,10 +270,7 @@ def run_pipeline(
     """
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    # Randomise result count between 2 and 5 if caller did not specify
-    if max_results is None:
-        max_results = random.randint(2, 5)
-    print(f"[pipeline] max_results={max_results}")
+   
 
     txt_path   = ""
     txt_content = ""

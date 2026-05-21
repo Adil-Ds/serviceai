@@ -136,7 +136,9 @@ export default function MapSearchOverlay({ providers = [], isSearching = true })
 
       {/* Corner watermark */}
       <View style={s.brand} pointerEvents="none">
-        <Text style={s.brandText}>✦ ServiceAI</Text>
+        <Text style={[s.brandText, { color: "#EAEAEA" }]}>Book</Text>
+        <Text style={[s.brandText, { color: "#00BCD4" }]}>N</Text>
+        <Text style={[s.brandText, { color: "#E91E8C" }]}>Fix</Text>
       </View>
 
       <StatusBadge isSearching={isSearching} count={providers.length} />
@@ -170,9 +172,10 @@ const s = StyleSheet.create({
   },
   brand: {
     position: "absolute", top: 12, right: 14,
+    flexDirection: "row",
     backgroundColor: "#05050fAA",
     paddingHorizontal: 8, paddingVertical: 4,
     borderRadius: 8, borderWidth: 1, borderColor: C.radar + "33",
   },
-  brandText: { fontSize: 9, color: C.radar, fontWeight: "700", letterSpacing: 0.5 },
+  brandText: { fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
 });

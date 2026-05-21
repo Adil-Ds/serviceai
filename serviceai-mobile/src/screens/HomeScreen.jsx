@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { COLORS, FONTS, RADIUS, CATEGORIES } from "../constants/theme";
 import { API } from "../services/api";
+import BrandLogo from "../components/BrandLogo";
 
 export default function HomeScreen({ navigation }) {
   const [text, setText] = useState("");
@@ -36,7 +37,7 @@ export default function HomeScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.logo}>🔧 ServiceAI</Text>
+          <BrandLogo size={34} style={{ marginBottom: 6 }} />
           <Text style={styles.tagline}>Find trusted local experts</Text>
         </View>
 
@@ -106,7 +107,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
   container: { padding: 20, paddingBottom: 40 },
   header: { alignItems: "center", marginTop: 20, marginBottom: 32 },
-  logo: { fontSize: 32, ...FONTS.bold, color: COLORS.text, marginBottom: 6 },
+  // logo style replaced by BrandLogo component
   tagline: { fontSize: 14, color: COLORS.textSecondary },
   inputCard: {
     backgroundColor: COLORS.card, borderRadius: RADIUS.lg,

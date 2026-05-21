@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "serviceai-mobile",
-    "slug": "serviceai-mobile",
+    "name": "BookNFix",
+    "slug": "booknfix",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

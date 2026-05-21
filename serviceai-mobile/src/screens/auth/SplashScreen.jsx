@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS } from "../../constants/theme";
 import { Pill } from "../../components/ui/SharedUI";
+import BrandLogo from "../../components/BrandLogo";
 
 export default function SplashScreen({ onDone }) {
   const logoScale = useRef(new Animated.Value(0.7)).current;
@@ -70,7 +71,7 @@ export default function SplashScreen({ onDone }) {
       </Animated.View>
 
       <Animated.View style={{ opacity: textOpacity, alignItems: "center", marginTop: 24 }}>
-        <Text style={styles.brand}>ServiceAI</Text>
+        <BrandLogo size={36} style={{ marginBottom: 6 }} />
         <Text style={styles.tagline}>AGENT · BOOK · DONE</Text>
       </Animated.View>
 
@@ -99,7 +100,7 @@ const styles = StyleSheet.create({
     shadowColor: COLORS.primary, shadowOpacity: 0.6, shadowRadius: 30,
     shadowOffset: { width: 0, height: 14 }, elevation: 16,
   },
-  brand: { fontSize: 32, fontWeight: "900", letterSpacing: -0.8, color: COLORS.text },
+  // brand style handled by BrandLogo component
   tagline: { fontSize: 12, color: COLORS.textSecondary, marginTop: 6, letterSpacing: 2 },
   barTrack: {
     position: "absolute", bottom: 72, left: 60, right: 60,

@@ -155,7 +155,7 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.version}>ServiceAI v2.0 · Build 2026 · All Rights Reserved</Text>
+        <Text style={styles.version}>BookNFix v2.0 · Build 2026 · All Rights Reserved</Text>
 
       </ScrollView>
     </SafeAreaView>

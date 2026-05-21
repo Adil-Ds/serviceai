@@ -84,6 +84,29 @@ def fetch_website_emails(url: str) -> list:
 
 # ── driver ────────────────────────────────────────────────────────────────────
 
+def get_chrome_major_version() -> int:
+    import platform
+    if platform.system() == "Windows":
+        try:
+            import winreg
+            reg_paths = [
+                (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome")
+            ]
+            for hkey, path in reg_paths:
+                try:
+                    key = winreg.OpenKey(hkey, path)
+                    value, _ = winreg.QueryValueEx(key, "version" if "BLBeacon" in path else "DisplayVersion")
+                    if value:
+                        return int(value.split('.')[0])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return 148  # Default known version from tracebacks
+    return None
+
 def make_driver(headless: bool = False) -> uc.Chrome:
     opts = uc.ChromeOptions()
     opts.add_argument('--lang=en-US')
@@ -91,10 +114,31 @@ def make_driver(headless: bool = False) -> uc.Chrome:
     opts.add_argument('--no-default-browser-check')
     opts.add_argument('--window-size=1400,900')
     opts.add_argument('--disable-notifications')
+    opts.add_argument('--no-sandbox')
+    opts.add_argument('--disable-dev-shm-usage')
+    opts.add_argument('--disable-gpu')
     # Opened visibly as requested so you can monitor progress.
     if headless:
         opts.add_argument('--headless=new')
-    return uc.Chrome(options=opts, use_subprocess=False)
+    
+    v_main = get_chrome_major_version()
+    print(f"[scraper] Detected Chrome major version: {v_main}")
+    try:
+        return uc.Chrome(options=opts, use_subprocess=False, version_main=v_main)
+    except Exception as e:
+        print(f"[scraper] uc.Chrome init failed with version_main={v_main}: {e}. Retrying without version_main...")
+        try:
+            return uc.Chrome(options=opts, use_subprocess=False)
+        except Exception as e2:
+            print(f"[scraper] uc.Chrome fallback failed: {e2}. Attempting simple selenium chrome driver...")
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            co = Options()
+            co.add_argument('--headless')
+            co.add_argument('--no-sandbox')
+            co.add_argument('--disable-dev-shm-usage')
+            co.add_argument('--disable-gpu')
+            return webdriver.Chrome(options=co)
 
 
 def dismiss_consent(driver):

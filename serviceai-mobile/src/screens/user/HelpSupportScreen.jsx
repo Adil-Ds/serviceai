@@ -9,8 +9,8 @@ import { COLORS, FONTS, RADIUS } from "../../constants/theme";
 
 const HELPLINE   = "+923001234567";
 const WHATSAPP   = "+923210000000";
-const EMAIL      = "support@serviceai.pk";
-const WHATSAPP_MSG = "Hello! I need help with ServiceAI.";
+const EMAIL      = "support@booknfix.pk";
+const WHATSAPP_MSG = "Hello! I need help with BookNFix.";
 
 const FAQS = [
   {
@@ -27,7 +27,7 @@ const FAQS = [
   },
   {
     q: "What payment methods are accepted?",
-    a: "ServiceAI is a matching platform — payment is made directly to the provider after the service. Common methods: cash, EasyPaisa, JazzCash, or bank transfer. Always agree on payment method before booking.",
+    a: "BookNFix is a matching platform — payment is made directly to the provider after the service. Common methods: cash, EasyPaisa, JazzCash, or bank transfer. Always agree on payment method before booking.",
   },
   {
     q: "How do I become a service provider?",
@@ -35,7 +35,7 @@ const FAQS = [
   },
   {
     q: "Which cities are supported?",
-    a: "Currently ServiceAI covers Karachi and Lahore with 50+ verified providers. More cities including Islamabad, Rawalpindi, and Faisalabad are coming soon.",
+    a: "Currently BookNFix covers Karachi and Lahore with 50+ verified providers. More cities including Islamabad, Rawalpindi, and Faisalabad are coming soon.",
   },
   {
     q: "Is my location data safe?",
@@ -102,7 +102,7 @@ export default function HelpSupportScreen() {
   };
 
   const openEmail = () => {
-    Linking.openURL(`mailto:${EMAIL}?subject=ServiceAI Support`).catch(() =>
+    Linking.openURL(`mailto:${EMAIL}?subject=BookNFix Support`).catch(() =>
       Alert.alert("Cannot open email", `Email us at: ${EMAIL}`)
     );
   };
@@ -126,7 +126,7 @@ export default function HelpSupportScreen() {
           <ContactCard
             icon="call-outline"
             label="Helpline (9 AM – 9 PM)"
-            value="0800-SERVICEAI  ·  0300-1234567"
+            value="0800-BOOKNFIX  ·  0300-1234567"
             color={COLORS.success}
             onPress={openPhone}
           />
@@ -140,7 +140,7 @@ export default function HelpSupportScreen() {
           <ContactCard
             icon="mail-outline"
             label="Email Support"
-            value="support@serviceai.pk"
+            value="support@booknfix.pk"
             color={COLORS.info}
             onPress={openEmail}
           />
@@ -154,7 +154,7 @@ export default function HelpSupportScreen() {
 
         <View style={styles.footer}>
           <Ionicons name="shield-checkmark-outline" size={14} color={COLORS.textMuted} />
-          <Text style={styles.footerText}>ServiceAI v2.0 · Google Antigravity Hackathon</Text>
+          <Text style={styles.footerText}>BookNFix v2.0 · Google Antigravity Hackathon</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

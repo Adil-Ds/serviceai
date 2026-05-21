@@ -94,7 +94,7 @@ export default function LanguageScreen() {
         <View style={styles.noteCard}>
           <Ionicons name="information-circle-outline" size={16} color={COLORS.info} />
           <Text style={styles.noteText}>
-            ServiceAI supports Urdu and English input for service requests. You can type in either language regardless of this setting.
+            BookNFix supports Urdu and English input for service requests. You can type in either language regardless of this setting.
           </Text>
         </View>
       </View>

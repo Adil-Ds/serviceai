@@ -55,7 +55,7 @@ export default function AppearanceScreen() {
             <Ionicons name="moon-outline" size={28} color="#A78BFA" />
           </View>
           <Text style={styles.heroTitle}>Appearance</Text>
-          <Text style={styles.heroSub}>Customize how ServiceAI looks on your device</Text>
+          <Text style={styles.heroSub}>Customize how BookNFix looks on your device</Text>
         </View>
 
         <Text style={styles.sectionTitle}>Theme</Text>

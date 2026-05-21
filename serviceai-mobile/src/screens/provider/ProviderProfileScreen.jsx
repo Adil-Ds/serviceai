@@ -82,10 +82,10 @@ export default function ProviderProfileScreen() {
           ))}
         </View>
 
-        {/* ServiceAI badge */}
+        {/* BookNFix badge */}
         <View style={styles.aiBadge}>
           <Ionicons name="sparkles" size={14} color={COLORS.primary} />
-          <Text style={styles.aiBadgeText}>Listed on ServiceAI · Powered by Groq AI</Text>
+          <Text style={styles.aiBadgeText}>Listed on BookNFix · Powered by Groq AI</Text>
         </View>
 
         <TouchableOpacity style={styles.signOutBtn} onPress={signOut} activeOpacity={0.85}>

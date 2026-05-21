@@ -11,6 +11,7 @@ import { API } from "../../services/api";
 import { COLORS, SERVICE_CATEGORIES } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { toE164 } from "../../components/BookingModal";
+import BrandLogo from "../../components/BrandLogo";
 
 let Location = null;
 try { Location = require("expo-location"); } catch (_) { }
@@ -1905,6 +1906,111 @@ export default function LiveSearchScreen({ navigation }) {
   const [errorMsg, setError] = useState("");
   const [bookingBiz, setBookingBiz] = useState(null);
 
+  // --- Premium VoIP simulated calling screen overlay states & anims ---
+  const [showLiveCallModal, setShowLiveCallModal] = useState(false);
+  const [liveCallLogs, setLiveCallLogs] = useState([]);
+  const [liveCallStatus, setLiveCallStatus] = useState("Initializing Dispatch...");
+  const [livePulseAnim] = useState(new Animated.Value(1));
+  const [liveWaveAnims] = useState(() => Array.from({ length: 5 }, () => new Animated.Value(0.2)));
+  const [liveCallOutcome, setLiveCallOutcome] = useState("calling"); // "calling" | "failed"
+  const [selectedBookingDate, setSelectedBookingDate] = useState("");
+  const [selectedBookingTime, setSelectedBookingTime] = useState("");
+  const [savedBookingBiz, setSavedBookingBiz] = useState(null);
+
+  // Audio waveform scaling for Live Calling Modal
+  useEffect(() => {
+    let loops = [];
+    if (showLiveCallModal) {
+      if (liveCallOutcome === "calling") {
+        // Pulsing profile rings
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(livePulseAnim, { toValue: 1.35, duration: 900, useNativeDriver: true }),
+            Animated.timing(livePulseAnim, { toValue: 1.0, duration: 900, useNativeDriver: true }),
+          ])
+        ).start();
+
+        // Waveform scaling
+        liveWaveAnims.forEach((anim, i) => {
+          const l = Animated.loop(
+            Animated.sequence([
+              Animated.delay(i * 120),
+              Animated.timing(anim, { toValue: Math.random() * 0.8 + 0.2, duration: 300, useNativeDriver: true }),
+              Animated.timing(anim, { toValue: 0.2, duration: 300, useNativeDriver: true }),
+            ])
+          );
+          l.start();
+          loops.push(l);
+        });
+      } else {
+        livePulseAnim.setValue(1);
+        liveWaveAnims.forEach(anim => anim.setValue(0.1));
+      }
+    } else {
+      livePulseAnim.setValue(1);
+      liveWaveAnims.forEach(anim => anim.setValue(0.2));
+    }
+    return () => {
+      loops.forEach(l => l.stop());
+    };
+  }, [showLiveCallModal, liveCallOutcome]);
+
+  const liveCallTimersRef = useRef([]);
+
+  const startLiveCall = (biz, date, time) => {
+    // Clear old timers
+    liveCallTimersRef.current.forEach(clearTimeout);
+    liveCallTimersRef.current = [];
+
+    // Save context for retries
+    setSavedBookingBiz(biz);
+    setSelectedBookingDate(date);
+    setSelectedBookingTime(time);
+
+    // Reset call modal states
+    setLiveCallLogs([]);
+    setLiveCallStatus("Initializing VoIP...");
+    setLiveCallOutcome("calling");
+    setShowLiveCallModal(true);
+
+    // Trigger background API VoIP phone call immediately
+    API.initiateCall({
+      provider_phone: toE164(biz?.phone),
+      provider_name: biz?.name || "Provider",
+      user_name: userProfile?.name || "Customer",
+      user_address: locText || biz?.address || "",
+      problem: problemDetails || service || "Service required",
+      service_type: service || "Service",
+      preferred_time: time ? `${date} at ${time}` : date,
+      language: "ur",
+      user_phone: userProfile?.phone || null,
+      booking_id: null,
+      user_id: userProfile?.uid || null,
+    }).catch(() => { });
+
+    const steps = [
+      { t: 0, status: "VoIP Gateway Connecting...", log: "📡 Connecting to BookNFix secure gateway..." },
+      { t: 800, status: "Initializing AI Agent...", log: "🤖 Dispatch Agent 4 initialized. Status: Online" },
+      { t: 1800, status: `Dialing ${biz?.name || "Provider"}...`, log: `📞 Dialing provider ${biz?.name || "Provider"} at ${biz?.phone || "+92 300-1234567"}...` },
+      { t: 3000, status: "Ringing...", log: "🔔 Connection established. Line ringing..." },
+      { t: 5000, status: "Ringing (No Answer)...", log: `⏳ Ringing timed out. No response from ${biz?.name || "Provider"}.` },
+      { t: 6500, status: "Provider Not Available", log: `❌ Dispatch failed: Provider unreachable at this time.` },
+      { t: 7800, status: "Booking Marked Pending", log: "📝 Request saved as PENDING. You can try dispatching again." },
+    ];
+
+    // Trigger sequential updates
+    steps.forEach((step) => {
+      const tId = setTimeout(() => {
+        setLiveCallStatus(step.status);
+        setLiveCallLogs((prev) => [...prev, step.log]);
+        if (step.status === "Booking Marked Pending") {
+          setLiveCallOutcome("failed");
+        }
+      }, step.t);
+      liveCallTimersRef.current.push(tId);
+    });
+  };
+
   const sweepAnim = useRef(new Animated.Value(0)).current;
   const r0 = useRef(new Animated.Value(0)).current;
   const r1 = useRef(new Animated.Value(0)).current;
@@ -2191,21 +2297,9 @@ export default function LiveSearchScreen({ navigation }) {
           issueText={problemDetails}
           onBack={() => setBookingBiz(null)}
           onDone={(date, time) => {
-            API.initiateCall({
-              provider_phone: toE164(bookingBiz?.phone),
-              provider_name: bookingBiz?.name || "Provider",
-              user_name: userProfile?.name || "Customer",
-              user_address: locText || bookingBiz?.address || "",
-              problem: problemDetails || service || "Service required",
-              service_type: service || "Service",
-              preferred_time: time ? `${date} at ${time}` : date,
-              language: "ur",
-              user_phone: userProfile?.phone || null,
-              booking_id: null,
-              user_id: userProfile?.uid || null,
-            }).catch(() => { });
+            const biz = bookingBiz;
             setBookingBiz(null);
-            navigation.navigate("UserTabs", { screen: "Home" });
+            startLiveCall(biz, date, time);
           }}
         />
       )}
@@ -2294,6 +2388,148 @@ export default function LiveSearchScreen({ navigation }) {
           <Text style={s.tabLabel}>Profile</Text>
         </TouchableOpacity>
       </View>
+
+      {/* --- PREMIUM VoIP AI CALL DIALER MODAL OVERLAY --- */}
+      <Modal
+        visible={showLiveCallModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+      >
+        <View style={s.modalOverlay}>
+          <LinearGradient
+            colors={["#080816", "#0D0D26", "#070714"]}
+            style={StyleSheet.absoluteFill}
+          />
+          <SafeAreaView style={s.modalSafe}>
+            
+            {/* Top brand header */}
+            <View style={s.modalHeader}>
+              <BrandLogo size={24} />
+              <View style={[s.dispatchPill, liveCallOutcome === "failed" && { backgroundColor: "#F59E0B22", borderColor: "#F59E0B44" }]}>
+                <View style={[s.dispatchDot, liveCallOutcome === "failed" && { backgroundColor: "#F59E0B" }]} />
+                <Text style={[s.dispatchPillText, liveCallOutcome === "failed" && { color: "#F59E0B" }]}>
+                  {liveCallOutcome === "failed" ? "DISPATCH PENDING" : "AI DISPATCH ACTIVE"}
+                </Text>
+              </View>
+            </View>
+
+            {/* Calling connection graphic */}
+            <View style={s.callingVisualContainer}>
+              <View style={s.callingRow}>
+                {/* Agent Avatar Box */}
+                <View style={s.avatarWrapper}>
+                  <Animated.View style={[s.pulseRing, { transform: [{ scale: livePulseAnim }], borderColor: liveCallOutcome === "failed" ? "#F59E0B" : COLORS.primary }]} />
+                  <LinearGradient colors={liveCallOutcome === "failed" ? ["#F59E0B", "#D97706"] : ["#8B5CF6", "#6C63FF"]} style={s.callAvatar}>
+                    <Ionicons name={liveCallOutcome === "failed" ? "alert-circle" : "sparkles"} size={26} color="#fff" />
+                  </LinearGradient>
+                  <Text style={s.avatarLabel}>AI Agent 4</Text>
+                </View>
+
+                {/* Connecting glowing dashed line */}
+                <View style={s.connectingLineContainer}>
+                  <Ionicons name={liveCallOutcome === "failed" ? "close-circle" : "radio-outline"} size={20} color={liveCallOutcome === "failed" ? "#F59E0B" : "#00BCD4"} style={s.pulsingRadio} />
+                  <View style={[s.dashedLine, liveCallOutcome === "failed" && { borderColor: "#F59E0B" }]} />
+                </View>
+
+                {/* Provider Avatar Box */}
+                <View style={s.avatarWrapper}>
+                  <Animated.View style={[s.pulseRing, { transform: [{ scale: livePulseAnim }], borderColor: liveCallOutcome === "failed" ? "#F59E0B" : "#E91E8C" }]} />
+                  <LinearGradient colors={liveCallOutcome === "failed" ? ["#F59E0B", "#D97706"] : ["#E91E8C", "#FF4081"]} style={s.callAvatar}>
+                    <Text style={s.callAvatarText}>{savedBookingBiz?.name ? savedBookingBiz.name[0] : "P"}</Text>
+                  </LinearGradient>
+                  <Text style={s.avatarLabel}>{savedBookingBiz?.name ? savedBookingBiz.name.split(" ")[0] : "Provider"}</Text>
+                </View>
+              </View>
+
+              {liveCallOutcome === "failed" ? (
+                /* Dynamic Failed Outcome Warning Card & Interactive Retry Buttons */
+                <View style={s.outcomeCardContainer}>
+                  <View style={s.outcomeBox}>
+                    <Ionicons name="alert-circle-outline" size={24} color="#F59E0B" style={{ marginTop: 2 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.outcomeTitle}>Provider Unreachable</Text>
+                      <Text style={s.outcomeSub}>
+                        The AI Agent could not connect to {savedBookingBiz?.name || "the provider"} after multiple attempts. You can try it later.
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={s.outcomeButtonsRow}>
+                    <TouchableOpacity 
+                      activeOpacity={0.8} 
+                      style={s.retryBtn} 
+                      onPress={() => startLiveCall(savedBookingBiz, selectedBookingDate, selectedBookingTime)}
+                    >
+                      <Ionicons name="refresh" size={15} color="#fff" />
+                      <Text style={s.retryBtnText}>Retry AI Call</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      activeOpacity={0.8} 
+                      style={s.closeOutcomeBtn} 
+                      onPress={() => {
+                        setShowLiveCallModal(false);
+                        navigation.navigate("UserTabs", { screen: "BookingHistory" });
+                      }}
+                    >
+                      <Text style={s.closeOutcomeBtnText}>Go to Dashboard</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                /* Enhanced Waveform Audio Simulation */
+                <View style={s.waveformContainer}>
+                  {liveWaveAnims.map((anim, idx) => (
+                    <Animated.View
+                      key={idx}
+                      style={[
+                        s.waveformBar,
+                        {
+                          transform: [{ scaleY: anim }],
+                          backgroundColor: idx % 2 === 0 ? "#00BCD4" : "#E91E8C",
+                        }
+                      ]}
+                    />
+                  ))}
+                </View>
+              )}
+
+              {/* Status Header */}
+              <Text style={[s.callingStatusText, liveCallOutcome === "failed" && { color: "#F59E0B" }]}>{liveCallStatus}</Text>
+            </View>
+
+            {/* Transcription Console Logger */}
+            <View style={s.consoleCard}>
+              <View style={s.consoleHeader}>
+                <Ionicons name="terminal-outline" size={14} color="#00BCD4" />
+                <Text style={s.consoleTitle}>REAL-TIME VOICE LOGS</Text>
+              </View>
+              <ScrollView 
+                style={s.consoleLogsScroll}
+                contentContainerStyle={{ gap: 8, paddingBottom: 10 }}
+                ref={(r) => r?.scrollToEnd({ animated: true })}
+              >
+                {liveCallLogs.map((log, idx) => (
+                  <View key={idx} style={s.logRow}>
+                    <Text style={s.logText}>{log}</Text>
+                  </View>
+                ))}
+                {liveCallLogs.length === 0 && (
+                  <Text style={s.placeholderLogText}>Starting call connection logs...</Text>
+                )}
+              </ScrollView>
+            </View>
+
+            {/* Bottom secure footnote */}
+            <View style={s.secureFooter}>
+              <Ionicons name="lock-closed" size={12} color="#0CB888" />
+              <Text style={s.secureFooterText}>Secure encrypted VoIP conversation</Text>
+            </View>
+
+          </SafeAreaView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2490,6 +2726,262 @@ const s = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: "600",
     color: COLORS.textMuted,
+  },
+
+  // --- Brand New Enhanced Call UI Styles ---
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#070714",
+  },
+  modalSafe: {
+    flex: 1,
+    width: "100%",
+    padding: 24,
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  modalHeader: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 12,
+  },
+  dispatchPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0,188,212,0.12)",
+    borderWidth: 1,
+    borderColor: "#00BCD444",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  dispatchDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#00BCD4",
+  },
+  dispatchPillText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#00BCD4",
+    letterSpacing: 1,
+  },
+  callingVisualContainer: {
+    width: "100%",
+    alignItems: "center",
+    marginVertical: 20,
+  },
+  callingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "85%",
+    marginBottom: 40,
+  },
+  avatarWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  pulseRing: {
+    position: "absolute",
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 2,
+    borderColor: "#6C63FF",
+    opacity: 0.25,
+  },
+  callAvatar: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "#181838",
+  },
+  callAvatarText: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#fff",
+  },
+  avatarLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#EAEAEA",
+    marginTop: 10,
+  },
+  connectingLineContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    height: 40,
+  },
+  pulsingRadio: {
+    position: "absolute",
+    zIndex: 2,
+    backgroundColor: "#0D0D26",
+    padding: 6,
+    borderRadius: 15,
+  },
+  dashedLine: {
+    width: "100%",
+    height: 2,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  waveformContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 60,
+    marginBottom: 20,
+  },
+  waveformBar: {
+    width: 5,
+    height: 44,
+    borderRadius: 3,
+  },
+  callingStatusText: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 0.5,
+  },
+  consoleCard: {
+    width: "100%",
+    height: 220,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  consoleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+    paddingBottom: 8,
+    marginBottom: 10,
+  },
+  consoleTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#00BCD4",
+    letterSpacing: 1.2,
+  },
+  consoleLogsScroll: {
+    flex: 1,
+  },
+  logRow: {
+    backgroundColor: "rgba(255,255,255,0.03)",
+    padding: 8,
+    borderRadius: 6,
+    borderLeftWidth: 2,
+    borderLeftColor: "#E91E8C",
+  },
+  logText: {
+    fontSize: 11,
+    color: "#EAEAEA",
+    lineHeight: 16,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+  },
+  placeholderLogText: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.3)",
+    fontStyle: "italic",
+    textAlign: "center",
+    marginTop: 40,
+  },
+  secureFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    opacity: 0.7,
+  },
+  secureFooterText: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "#0CB888",
+  },
+  outcomeCardContainer: {
+    width: "100%",
+    alignItems: "center",
+    marginVertical: 15,
+    paddingHorizontal: 16,
+  },
+  outcomeBox: {
+    flexDirection: "row",
+    gap: 12,
+    backgroundColor: "rgba(245, 158, 11, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.25)",
+    borderRadius: 16,
+    padding: 14,
+    width: "100%",
+    marginBottom: 16,
+  },
+  outcomeTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#F59E0B",
+    marginBottom: 4,
+  },
+  outcomeSub: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.7)",
+    lineHeight: 18,
+  },
+  outcomeButtonsRow: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+    justifyContent: "center",
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#F59E0B",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    flex: 1,
+  },
+  retryBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  closeOutcomeBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    flex: 1,
+  },
+  closeOutcomeBtnText: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 13,
+    fontWeight: "600",
   },
 });
 

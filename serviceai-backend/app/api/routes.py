@@ -173,14 +173,16 @@ async def api_find_business(body: FindBusinessRequest):
     try:
         from app.Agentic_booker.pipeline import run_pipeline
 
-        # Run the blocking Chrome scraper in a thread so we don't block the event loop
-        # We override max_results=1 for single-provider real-time matching as requested!
+        import random
+        max_res = body.max_results if body.max_results not in (1, 5) else random.randint(2, 5)
+        print(f"[api_find_business] Scraping with dynamic max_results={max_res}")
+
         result = await asyncio.wait_for(
             asyncio.to_thread(
                 run_pipeline,
                 service=body.service,
                 user_address=body.address,
-                max_results=1,
+                max_results=max_res,
                 max_reviews=body.max_reviews,
                 headless=body.headless,
             ),
