@@ -4,7 +4,13 @@ from groq import AsyncGroq
 from app.models.schemas import BookingConfirmation, FollowUp, FollowUpSchedule
 from app.database.db import insert_followups
 
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+_groq_client = None
+
+def _get_client() -> AsyncGroq:
+    global _groq_client
+    if _groq_client is None:
+        _groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+    return _groq_client
 
 _FALLBACK_TEMPLATES = [
     {
@@ -67,7 +73,7 @@ Keep messages short, friendly, in English. Include booking ID {booking.booking_i
     raw = ""
     try:
         try:
-            response = await client.chat.completions.create(
+            response = await _get_client().chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4,
@@ -77,7 +83,7 @@ Keep messages short, friendly, in English. Include booking ID {booking.booking_i
             exc_str = str(api_exc)
             if "429" in exc_str or "rate_limit" in exc_str.lower() or "limit reached" in exc_str.lower():
                 print("[followup_agent] Rate limit exceeded on llama-3.3-70b-versatile. Falling back to llama-3.1-8b-instant...")
-                response = await client.chat.completions.create(
+                response = await _get_client().chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.4,

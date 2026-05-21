@@ -42,7 +42,13 @@ Important rules:
 - Never produce a final answer before completing steps 1 and 2 at minimum
 - Be specific: include real names, phone numbers, and ratings from tool results"""
 
-client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+_groq_client = None
+
+def _get_client() -> AsyncGroq:
+    global _groq_client
+    if _groq_client is None:
+        _groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+    return _groq_client
 
 
 @dataclass
@@ -79,7 +85,7 @@ async def run_agentic_loop(
 
         try:
             try:
-                response = await client.chat.completions.create(
+                response = await _get_client().chat.completions.create(
                     model=AGENT_MODEL,
                     messages=messages,
                     tools=REGISTERED_TOOLS,
@@ -91,7 +97,7 @@ async def run_agentic_loop(
                 exc_str = str(api_exc)
                 if "429" in exc_str or "rate_limit" in exc_str.lower() or "limit reached" in exc_str.lower():
                     print(f"[agentic_runner] Rate limit hit for {AGENT_MODEL}. Falling back to llama-3.1-8b-instant...")
-                    response = await client.chat.completions.create(
+                    response = await _get_client().chat.completions.create(
                         model="llama-3.1-8b-instant",
                         messages=messages,
                         tools=REGISTERED_TOOLS,

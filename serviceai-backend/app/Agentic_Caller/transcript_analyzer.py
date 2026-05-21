@@ -3,7 +3,13 @@ import re
 import json
 from groq import Groq
 
-_client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
+_groq_client = None
+
+def _get_client() -> Groq:
+    global _groq_client
+    if _groq_client is None:
+        _groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    return _groq_client
 
 _SYSTEM = """You are analyzing a phone call transcript between a booking coordinator and a service provider.
 The conversation may be in Urdu, English, or a mix of both.
@@ -166,7 +172,7 @@ def analyze_provider_response(transcript: str, requested_time: str = "") -> dict
 
     for attempt in range(2):
         try:
-            resp = _client.chat.completions.create(
+            resp = _get_client().chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": _SYSTEM},

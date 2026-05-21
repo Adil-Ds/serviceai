@@ -1,6 +1,11 @@
 #!/bin/sh
 # Start a virtual X display so Chrome can run in "headed" mode on Railway.
 # Google detects --headless=new; Xvfb is invisible but not flagged.
+
+# Remove stale lock from a previous crashed run — Railway restarts the container
+# process but the /tmp filesystem persists, so Xvfb :99 fails with "already active".
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
+
 Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
 XVFB_PID=$!
 
